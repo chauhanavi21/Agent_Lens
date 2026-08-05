@@ -1,0 +1,119 @@
+"""Smoke tests for the AgentLens SDK. Run: python test_sdk.py"""
+
+import asyncio
+import json
+import os
+import tempfile
+
+from agentlens import AgentLens, BudgetExceeded, FileExporter, SpanKind, current_run
+
+
+def test_basic_dag():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    @lens.tool("web_search")
+    def web_search(q):
+        return [f"result for {q}"]
+
+    @lens.span("summarize", kind=SpanKind.LLM)
+    def summarize(docs):
+        return "summary"
+
+    @lens.trace("research_agent", tags=["test"])
+    def agent(q):
+        return summarize(web_search(q))
+
+    assert agent("quantum") == "summary"
+    run = json.loads(open(path).read().strip())
+    assert run["status"] == "success"
+    names = [s["name"] for s in run["spans"]]
+    assert names == ["research_agent", "web_search", "summarize"]
+    root_id = run["spans"][0]["span_id"]
+    assert run["spans"][1]["parent_id"] == root_id
+    assert run["spans"][2]["parent_id"] == root_id
+    print("test_basic_dag ok")
+
+
+def test_error_and_retry():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+    calls = {"n": 0}
+
+    @lens.tool("flaky", retries=2)
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ValueError("boom")
+        return "ok"
+
+    @lens.trace("retry_agent")
+    def agent():
+        return flaky()
+
+    assert agent() == "ok"
+    run = json.loads(open(path).read().strip())
+    flaky_spans = [s for s in run["spans"] if s["name"] == "flaky"]
+    assert len(flaky_spans) == 3
+    assert flaky_spans[0]["status"] == "error"
+    assert flaky_spans[1]["retry_of"] == flaky_spans[0]["span_id"]
+    assert flaky_spans[2]["status"] == "success"
+    print("test_error_and_retry ok")
+
+
+def test_budget_guard():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    class FakeResponse:
+        model = "gpt-4o"
+        usage = type("U", (), {"prompt_tokens": 4000, "completion_tokens": 2000})()
+
+    @lens.llm_call("chat", model="gpt-4o")
+    def chat(prompt):
+        return FakeResponse()
+
+    @lens.trace("budget_agent", max_total_tokens=5000)
+    def agent():
+        chat("hello")  # 6000 tokens > 5000 budget: guard trips here
+        chat("world")  # never reached
+        return "done"
+
+    raised = False
+    try:
+        agent()
+    except BudgetExceeded:
+        raised = True
+    assert raised
+    run = json.loads(open(path).read().strip())
+    assert run["status"] == "paused"
+    assert run["total_tokens"] == 6000
+    print("test_budget_guard ok")
+
+
+def test_async():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    @lens.tool("fetch")
+    async def fetch(x):
+        await asyncio.sleep(0.01)
+        return x * 2
+
+    @lens.trace("async_agent")
+    async def agent(x):
+        assert current_run() is not None
+        return await fetch(x)
+
+    assert asyncio.run(agent(21)) == 42
+    run = json.loads(open(path).read().strip())
+    assert run["status"] == "success" and len(run["spans"]) == 2
+    print("test_async ok")
+
+
+if __name__ == "__main__":
+    test_basic_dag()
+    test_error_and_retry()
+    test_budget_guard()
+    test_async()
+    print("all SDK tests passed")

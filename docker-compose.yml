@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agentlens
+      POSTGRES_PASSWORD: agentlens
+      POSTGRES_DB: agentlens
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentlens"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  server:
+    build: ./server
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agentlens:agentlens@postgres:5432/agentlens
+      AGENTLENS_API_KEY: ${AGENTLENS_API_KEY:-}
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "7430:7430"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: ./ui
+      args:
+        VITE_API_URL: http://localhost:7430
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+
+volumes:
+  pgdata:

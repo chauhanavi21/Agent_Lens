@@ -26,6 +26,8 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **Run diffing**                  |     ✅     |    ❌     |    ❌     |
 | **Retry lineage**                |     ✅     |    ❌     |    ❌     |
 | **Budget guards (tokens/cost)**  |     ✅     |    ❌     |    ❌     |
+| **Timeline / waterfall view**    |     ✅     |    ❌     |    ✅     |
+| **Webhook alert rules**          |     ✅     |    ❌     |    ✅     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -80,9 +82,39 @@ one with retries and a failure) so you can explore the DAG and diff views.
   markers, dashed retry-lineage edges
 - **Span drawer** — click any node: inputs, outputs, exact prompt/response,
   token counts, cost, full error traceback
+- **Timeline view** — a waterfall of the same run: where wall-clock time
+  actually went, which steps overlapped, and the slowest leaf step outlined
 - **Run diff** — pin two runs (★), see which steps appeared, disappeared,
   flipped status, or got slower — with a one-line verdict naming the span
   where behavior first diverged
+- **Alerts** — build webhook rules from the UI and see every rule that has
+  fired, including failed deliveries
+
+## Alerts
+
+Rules are declarative, stored server-side, and evaluated on every finished
+run as a background task — a slow or broken webhook can never delay ingest
+or fail the agent's export.
+
+```bash
+curl -X POST http://localhost:7430/api/alerts/rules -H 'Content-Type: application/json' -d '{
+  "name": "Runs over budget",
+  "field": "total_cost_usd",
+  "op": "gt",
+  "value": "0.50",
+  "run_name": "research_agent",
+  "webhook_url": "https://hooks.slack.com/services/…"
+}'
+```
+
+Testable fields: `status`, `total_cost_usd`, `total_tokens`, `duration_ms`,
+`span_count`, `error_span_count`, `retry_count`, `name`.
+Operators: `gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `contains`.
+
+Payloads are Slack-compatible (`text`) and carry a structured `alert` object
+for generic consumers. `POST /api/alerts/rules/{id}/test` sends a sample so
+you can confirm the webhook works before you rely on it. Every firing is
+recorded at `GET /api/alerts/events` with its delivery status.
 
 ## SDK reference
 
@@ -140,6 +172,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 │              AgentLens Server (FastAPI)                  │
 │  POST /api/ingest/run                                    │
 │  GET  /api/runs   GET /api/runs/:id   POST /api/runs/diff│
+│  CRUD /api/alerts/rules   GET /api/alerts/events         │
 └─────────────────┬───────────────────────────────────────┘
                   │
         ┌─────────┴──────────┐
@@ -150,7 +183,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
                   │
 ┌─────────────────┴───────────────────────────────────────┐
 │                 AgentLens UI (React + D3)                │
-│   DAG graph · span drawer · run diff · live polling      │
+│  DAG · timeline · span drawer · run diff · alerts        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -175,9 +208,9 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 
 ## Roadmap
 
-- [ ] Webhook alerts — Slack/email when a run exceeds budget or errors
+- [x] Webhook alerts — Slack-compatible rules on any run field
 - [ ] Eval integration — attach Ragas/custom eval scores to runs
-- [ ] Timeline view — Gantt-style waterfall alongside the DAG
+- [x] Timeline view — Gantt-style waterfall alongside the DAG
 - [ ] LangGraph / AutoGPT native integrations
 - [ ] TypeScript SDK — for LangChain.js and other JS agent frameworks
 - [ ] OTEL bridge — export spans as OpenTelemetry traces

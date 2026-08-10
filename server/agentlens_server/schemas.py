@@ -65,3 +65,30 @@ class RunSummary(BaseModel):
 class DiffRequest(BaseModel):
     run_a: str
     run_b: str
+
+
+class AlertRuleIn(BaseModel):
+    name: str
+    field: str
+    op: str
+    value: str
+    webhook_url: str
+    run_name: Optional[str] = None
+    enabled: bool = True
+
+
+class AlertRuleOut(AlertRuleIn):
+    id: str
+    created_at: float
+
+
+class AlertEventOut(BaseModel):
+    id: str
+    rule_id: str
+    rule_name: str
+    run_id: str
+    run_name: str
+    reason: str
+    delivered: bool
+    delivery_error: Optional[str] = None
+    fired_at: float

@@ -132,6 +132,7 @@ class AgentRun:
     max_total_tokens: Optional[int] = None
     max_cost_usd: Optional[float] = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    scores: list = field(default_factory=list)
 
     @property
     def duration_ms(self) -> Optional[float]:
@@ -174,5 +175,6 @@ class AgentRun:
             "total_cost_usd": self.total_cost_usd,
             "error": self.error,
             "metadata": self.metadata,
+            "scores": [s.to_dict() for s in self.scores],
             "spans": [s.to_dict() for s in self.spans],
         }

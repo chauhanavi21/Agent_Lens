@@ -41,3 +41,58 @@ export async function diffRuns(runA, runB) {
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
   return res.json()
 }
+
+// --- alerts -------------------------------------------------------------- //
+
+async function send(path, method, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  return res.status === 204 ? null : res.json()
+}
+
+export async function listRules() {
+  if (DEMO) return demoState.rules
+  return get('/api/alerts/rules')
+}
+
+export async function createRule(rule) {
+  if (DEMO) {
+    const r = { ...rule, id: Math.random().toString(16).slice(2, 10), created_at: Date.now() / 1000, enabled: true }
+    demoState.rules = [r, ...demoState.rules]
+    return r
+  }
+  return send('/api/alerts/rules', 'POST', rule)
+}
+
+export async function deleteRule(id) {
+  if (DEMO) {
+    demoState.rules = demoState.rules.filter(r => r.id !== id)
+    return null
+  }
+  return send(`/api/alerts/rules/${id}`, 'DELETE')
+}
+
+export async function testRule(id) {
+  if (DEMO) return { delivered: false, error: 'demo mode does not send real webhooks' }
+  return send(`/api/alerts/rules/${id}/test`, 'POST')
+}
+
+export async function listEvents() {
+  if (DEMO) return demoState.events
+  return get('/api/alerts/events')
+}
+
+// in-memory store so the alerts UI is explorable without a server
+const demoState = {
+  rules: [
+    { id: 'demo1', name: 'Any failed run', field: 'status', op: 'eq', value: 'error', run_name: '', webhook_url: 'https://hooks.slack.com/services/DEMO', enabled: true, created_at: 0 },
+    { id: 'demo2', name: 'Runs over $0.05', field: 'total_cost_usd', op: 'gt', value: '0.05', run_name: '', webhook_url: 'https://hooks.slack.com/services/DEMO', enabled: true, created_at: 0 },
+  ],
+  events: [
+    { id: 'e1', rule_id: 'demo1', rule_name: 'Any failed run', run_id: 'demo-run-b', run_name: 'research_agent', reason: 'status is error (eq error)', delivered: true, fired_at: 0 },
+  ],
+}

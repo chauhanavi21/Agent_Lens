@@ -111,9 +111,59 @@ def test_async():
     print("test_async ok")
 
 
+def test_scores():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    from agentlens import score
+
+    @lens.span("answer", kind=SpanKind.LLM)
+    def answer(q):
+        score("relevancy", 0.91, source="ragas", threshold=0.8, on_span=True)
+        return "a"
+
+    @lens.trace("qa_agent")
+    def agent(q):
+        out = answer(q)
+        score("faithfulness", 0.72, source="ragas", threshold=0.85, comment="hallucinated a date")
+        return out
+
+    assert agent("q") == "a"
+    run = json.loads(open(path).read().strip())
+    scores = {s["name"]: s for s in run["scores"]}
+    assert scores["relevancy"]["passed"] is True
+    assert scores["relevancy"]["span_id"] is not None      # scoped to the span
+    assert scores["faithfulness"]["passed"] is False       # below threshold
+    assert scores["faithfulness"]["span_id"] is None       # whole-run score
+    print("test_scores ok")
+
+
+def test_score_outside_run_is_safe():
+    from agentlens import score
+    assert score("orphan", 1.0) is None  # no active run: no-op, no crash
+    print("test_score_outside_run_is_safe ok")
+
+
+def test_from_ragas():
+    from agentlens import from_ragas
+
+    assert from_ragas({"faithfulness": 0.86, "answer_relevancy": 0.91, "name": "x"}) == {
+        "faithfulness": 0.86, "answer_relevancy": 0.91
+    }
+
+    class R:  # per-sample list, as newer Ragas returns
+        scores = [{"faithfulness": 0.9}, {"faithfulness": 0.7}]
+
+    assert from_ragas(R()) == {"faithfulness": 0.8}
+    print("test_from_ragas ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
     test_budget_guard()
     test_async()
+    test_scores()
+    test_score_outside_run_is_safe()
+    test_from_ragas()
     print("all SDK tests passed")

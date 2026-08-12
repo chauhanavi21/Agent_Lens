@@ -27,6 +27,7 @@ class RunRow(Base):
     total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     error: Mapped[str] = mapped_column(Text, nullable=True)
     meta: Mapped[dict] = mapped_column(default=dict)
+    scores: Mapped[list] = mapped_column(default=list)
     spans: Mapped[list] = mapped_column(default=list)
 
 

@@ -6,6 +6,7 @@ the execution DAG, tool calls, retries, cost per node, and run diffs.
 """
 
 from .context import current_run, current_span
+from .evals import Score, from_ragas, score
 from .exporters import ConsoleExporter, FileExporter, HttpExporter
 from .models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus
 from .tracer import AgentLens, BudgetExceeded, tool, trace
@@ -24,6 +25,9 @@ __all__ = [
     "SpanStatus",
     "current_run",
     "current_span",
+    "from_ragas",
+    "Score",
+    "score",
     "tool",
     "trace",
 ]

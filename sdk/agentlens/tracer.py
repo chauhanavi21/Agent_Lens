@@ -293,6 +293,28 @@ class AgentLens:
 
     # ------------------------------------------------------------------ #
 
+    def score_run(
+        self,
+        run_id: str,
+        scores: dict[str, float],
+        source: str = "custom",
+        thresholds: Optional[dict[str, float]] = None,
+        comment: str = "",
+    ) -> bool:
+        """
+        Attach scores to an already-exported run. Use this from an eval
+        harness that runs after the agent, e.g. with Ragas output.
+        Returns True when the server accepted them.
+        """
+        from .evals import post_scores, score_run_payload
+
+        payload = score_run_payload(run_id, scores, source, thresholds, comment)
+        endpoint = getattr(self.exporter, "url", "")
+        if not endpoint:
+            return False
+        base = endpoint.replace("/api/ingest/run", "")
+        return post_scores(base, payload, getattr(self.exporter, "api_key", None))
+
     def _check_budget(self) -> None:
         run = ctx.current_run()
         if run is None:

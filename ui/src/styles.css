@@ -135,3 +135,58 @@ code, pre { font-family: var(--mono); }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* mode switch (graph / timeline) */
+.mode-switch { display: inline-flex; margin: 16px 22px 0; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg { background: var(--bg-raise); border: none; color: var(--text-dim); padding: 6px 16px; cursor: pointer; font: inherit; }
+.seg.active { background: var(--bg-panel); color: var(--text); }
+
+/* timeline / waterfall */
+.timeline { padding: 14px 22px 24px; }
+.timeline-axis { position: relative; height: 20px; border-bottom: 1px solid var(--line); margin-left: 210px; margin-right: 78px; }
+.tick { position: absolute; transform: translateX(-50%); font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); }
+.timeline-rows { margin-top: 6px; }
+.tl-row { display: flex; align-items: center; height: 30px; border-radius: 6px; cursor: pointer; }
+.tl-row:hover { background: var(--bg-raise); }
+.tl-row.selected { background: var(--bg-panel); box-shadow: inset 2px 0 0 var(--accent); }
+.tl-label { width: 210px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; overflow: hidden; }
+.tl-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.tl-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-flag { font-size: 11px; }
+.tl-flag.retry { color: var(--warn); }
+.tl-flag.err { color: var(--err); }
+.tl-track { position: relative; flex: 1; height: 100%; }
+.tl-bar { position: absolute; top: 9px; height: 12px; border-radius: 3px; opacity: 0.85; min-width: 3px; }
+.tl-bar.status-error { opacity: 1; box-shadow: 0 0 0 1px var(--err); }
+.tl-bar.critical { outline: 1.5px solid var(--text); outline-offset: 2px; }
+.tl-tip { position: absolute; top: -4px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; font-family: var(--mono); font-size: 10.5px; white-space: nowrap; z-index: 3; }
+.tl-dur { width: 78px; text-align: right; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); }
+.timeline-foot { margin-top: 14px; color: var(--text-dim); font-size: 12px; }
+
+/* alerts */
+.alerts { padding: 20px 24px; max-width: 900px; }
+.alerts h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 12px; }
+.alert-form { background: var(--bg-raise); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+.form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+.form-grid label.wide { grid-column: 1 / -1; }
+.form-grid input, .form-grid select { background: var(--bg-panel); border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 8px 10px; font: 400 13px var(--sans); text-transform: none; letter-spacing: 0; }
+.btn { background: var(--accent); color: #05121f; border: none; border-radius: 7px; padding: 8px 16px; font: 600 13px var(--sans); cursor: pointer; }
+.btn.ghost { background: none; border: 1px solid var(--line); color: var(--text-dim); }
+.btn.ghost.danger:hover { color: var(--err); border-color: var(--err); }
+.notice { margin-top: 10px; font-size: 12.5px; color: var(--warn); }
+.alert-list { margin-top: 26px; }
+.empty-inline { color: var(--text-dim); font-size: 13px; }
+.alert-rule { display: flex; justify-content: space-between; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; margin-bottom: 8px; }
+.rule-expr { display: block; font-size: 12px; color: var(--accent); margin-top: 4px; }
+.rule-hook { font-size: 11.5px; color: var(--text-dim); margin-top: 3px; overflow-wrap: anywhere; }
+.rule-actions { display: flex; gap: 8px; flex: none; }
+.alert-event { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; font-size: 12.5px; flex-wrap: wrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.ok { background: var(--ok); }
+.dot.err { background: var(--err); }
+.ev-run { color: var(--text-dim); font-family: var(--mono); font-size: 11.5px; }
+.ev-reason { color: var(--text-dim); }
+.ev-fail { color: var(--err); font-size: 11.5px; }
+
+@media (max-width: 900px) { .form-grid { grid-template-columns: 1fr 1fr; } }

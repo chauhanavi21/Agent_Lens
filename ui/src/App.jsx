@@ -3,6 +3,8 @@ import { DEMO, getRun, listRuns } from './api'
 import DagView from './components/DagView'
 import RunDiff from './components/RunDiff'
 import RunList from './components/RunList'
+import TimelineView from './components/TimelineView'
+import AlertsPanel from './components/AlertsPanel'
 import SpanDrawer from './components/SpanDrawer'
 
 export default function App() {
@@ -12,7 +14,8 @@ export default function App() {
   const [run, setRun] = useState(null)
   const [span, setSpan] = useState(null)
   const [diffPair, setDiffPair] = useState([]) // [runIdA, runIdB]
-  const [view, setView] = useState('dag')     // 'dag' | 'diff'
+  const [view, setView] = useState('dag')     // 'dag' | 'diff' | 'alerts'
+  const [runMode, setRunMode] = useState('dag') // 'dag' | 'timeline'
   const [error, setError] = useState(null)
 
   const refresh = useCallback(async () => {
@@ -62,6 +65,7 @@ export default function App() {
           >
             Diff {diffPair.length ? `(${diffPair.length}/2)` : ''}
           </button>
+          <button className={view === 'alerts' ? 'tab active' : 'tab'} onClick={() => setView('alerts')}>Alerts</button>
         </nav>
         {DEMO && <span className="demo-pill">demo data — set VITE_API_URL to connect a server</span>}
       </header>
@@ -80,7 +84,15 @@ export default function App() {
         />
         <main className="main">
           {view === 'dag' && run && (
-            <DagView run={run} selectedSpan={span} onSelectSpan={setSpan} />
+            <>
+              <div className="mode-switch">
+                <button className={runMode === 'dag' ? 'seg active' : 'seg'} onClick={() => setRunMode('dag')}>Graph</button>
+                <button className={runMode === 'timeline' ? 'seg active' : 'seg'} onClick={() => setRunMode('timeline')}>Timeline</button>
+              </div>
+              {runMode === 'dag'
+                ? <DagView run={run} selectedSpan={span} onSelectSpan={setSpan} />
+                : <TimelineView run={run} selectedSpan={span} onSelectSpan={setSpan} />}
+            </>
           )}
           {view === 'dag' && !run && (
             <div className="empty">Instrument an agent with <code>@lens.trace</code> and runs appear here.</div>
@@ -88,6 +100,7 @@ export default function App() {
           {view === 'diff' && diffPair.length === 2 && (
             <RunDiff runA={diffPair[0]} runB={diffPair[1]} />
           )}
+          {view === 'alerts' && <AlertsPanel />}
         </main>
         {view === 'dag' && span && <SpanDrawer span={span} onClose={() => setSpan(null)} />}
       </div>

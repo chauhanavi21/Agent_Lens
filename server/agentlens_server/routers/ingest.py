@@ -9,7 +9,7 @@ from ..alerts import _describe, build_payload, dispatch, rule_matches
 from ..config import API_KEY
 from ..db import SessionLocal, get_session
 from ..models import AlertEventRow, AlertRuleRow, RunRow
-from ..schemas import RunIn
+from ..schemas import RunIn, ScoresIn
 
 router = APIRouter(tags=["ingest"])
 
@@ -72,6 +72,7 @@ async def ingest_run(
         total_cost_usd=run.total_cost_usd,
         error=run.error,
         meta=run.metadata,
+        scores=[sc.model_dump() for sc in run.scores],
         spans=spans,
     )
     if row is None:
@@ -85,3 +86,38 @@ async def ingest_run(
     if run.status != "running":
         background.add_task(evaluate_alerts, {"run_id": run.run_id, **payload, "metadata": run.metadata})
     return {"run_id": run.run_id, "spans": len(spans)}
+
+
+@router.post("/ingest/scores", status_code=200)
+async def ingest_scores(
+    body: ScoresIn,
+    background: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Attach eval scores to a run that already finished. Eval harnesses run
+    after the agent, so scores arrive on their own schedule; alerts are
+    re-evaluated here so a quality regression still pages you.
+    """
+    _check_auth(authorization)
+    row = await session.get(RunRow, body.run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Run '{body.run_id}' not found.")
+
+    incoming = [s.model_dump() for s in body.scores]
+    for s in incoming:
+        if s.get("passed") is None and s.get("threshold") is not None:
+            s["passed"] = float(s["value"]) >= float(s["threshold"])
+    # replace by name so re-scoring a run updates rather than duplicates
+    kept = [s for s in (row.scores or []) if s["name"] not in {i["name"] for i in incoming}]
+    row.scores = kept + incoming
+    await session.commit()
+
+    run = {
+        "run_id": row.run_id, "name": row.name, "status": row.status,
+        "total_cost_usd": row.total_cost_usd, "total_tokens": row.total_tokens,
+        "duration_ms": row.duration_ms, "spans": row.spans or [], "scores": row.scores,
+    }
+    background.add_task(evaluate_alerts, run)
+    return {"run_id": row.run_id, "scores": len(row.scores)}

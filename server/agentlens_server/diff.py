@@ -52,6 +52,27 @@ def _span_delta(a: dict, b: dict) -> Optional[dict[str, Any]]:
     return changes or None
 
 
+def _score_delta(run_a: dict, run_b: dict) -> list[dict[str, Any]]:
+    """Compare eval scores by name so quality regressions show up in a diff."""
+    sa = {s["name"]: s for s in (run_a.get("scores") or [])}
+    sb = {s["name"]: s for s in (run_b.get("scores") or [])}
+    out = []
+    for name in sorted(set(sa) | set(sb)):
+        a, b = sa.get(name), sb.get(name)
+        if a and b:
+            if round(float(a["value"]), 6) != round(float(b["value"]), 6):
+                out.append({"name": name, "a": a["value"], "b": b["value"],
+                            "delta": round(float(b["value"]) - float(a["value"]), 4),
+                            "passed_a": a.get("passed"), "passed_b": b.get("passed")})
+        else:
+            present = b or a
+            out.append({"name": name, "a": a["value"] if a else None,
+                        "b": b["value"] if b else None, "delta": None,
+                        "passed_a": a.get("passed") if a else None,
+                        "passed_b": b.get("passed") if b else None})
+    return out
+
+
 def diff_runs(run_a: dict, run_b: dict) -> dict[str, Any]:
     pa, pb = _paths(run_a["spans"]), _paths(run_b["spans"])
     keys_a, keys_b = set(pa), set(pb)
@@ -74,6 +95,7 @@ def diff_runs(run_a: dict, run_b: dict) -> dict[str, Any]:
         "added": [{"path": k, "span": pb[k]["span_id"], "status": pb[k]["status"]} for k in added],
         "removed": [{"path": k, "span": pa[k]["span_id"], "status": pa[k]["status"]} for k in removed],
         "changed": changed,
+        "scores": _score_delta(run_a, run_b),
         "summary": {
             "added": len(added), "removed": len(removed), "changed": len(changed),
             "verdict": _verdict(run_a, run_b, changed),
@@ -82,13 +104,25 @@ def diff_runs(run_a: dict, run_b: dict) -> dict[str, Any]:
 
 
 def _verdict(a: dict, b: dict, changed: list) -> str:
-    if a["status"] == b["status"] and not changed:
-        return "Runs are structurally and behaviorally equivalent."
+    parts = []
+
+    # quality leads: a score regression is the headline even when the DAG matches
+    regressions = [s for s in _score_delta(a, b) if s.get("delta") is not None and s["delta"] < 0]
+    if regressions:
+        worst = min(regressions, key=lambda s: s["delta"])
+        parts.append(f"Quality dropped: {worst['name']} {worst['a']} → {worst['b']}.")
+
     if a["status"] != b["status"]:
         flips = [c for c in changed if "status" in c["changes"]]
         if flips:
             # deepest flipped span is the true divergence point (root flips are downstream)
             deepest = max(flips, key=lambda c: c["path"].count("."))
-            return f"Status diverged first at '{deepest['path']}'."
-        return "Run status differs but no single span status flip was found."
-    return f"{len(changed)} span(s) changed behavior between runs."
+            parts.append(f"Status diverged first at '{deepest['path']}'.")
+        else:
+            parts.append("Run status differs but no single span status flip was found.")
+    elif changed:
+        parts.append(f"{len(changed)} span(s) changed behavior between runs.")
+
+    if not parts:
+        return "Runs are structurally and behaviorally equivalent."
+    return " ".join(parts)

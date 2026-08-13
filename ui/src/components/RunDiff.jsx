@@ -39,6 +39,23 @@ export default function RunDiff({ runA, runB }) {
 
       <div className="diff-verdict">{diff.summary.verdict}</div>
 
+      {diff.scores?.length > 0 && (
+        <section className="diff-section">
+          <h3>Eval scores</h3>
+          {diff.scores.map(s => (
+            <div key={s.name} className="diff-item">
+              <code className="diff-path">{s.name}</code>
+              <div className="diff-changes">
+                <span className={`chip ${s.delta == null ? '' : s.delta < 0 ? 'chip-slower' : 'chip-faster'}`}>
+                  {s.a ?? '—'} → {s.b ?? '—'}{s.delta != null && ` (${s.delta > 0 ? '+' : ''}${s.delta})`}
+                </span>
+                {s.passed_b === false && <span className="chip chip-error">below threshold</span>}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       {diff.changed.length > 0 && (
         <section className="diff-section">
           <h3>Changed ({diff.changed.length})</h3>

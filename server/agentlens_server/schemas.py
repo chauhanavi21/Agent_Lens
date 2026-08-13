@@ -34,6 +34,23 @@ class SpanIn(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
+class ScoreIn(BaseModel):
+    name: str
+    value: float
+    source: str = "custom"
+    threshold: Optional[float] = None
+    passed: Optional[bool] = None
+    comment: str = ""
+    span_id: Optional[str] = None
+    recorded_at: float = 0.0
+
+
+class ScoresIn(BaseModel):
+    """Late-arriving scores from an eval harness, keyed by run."""
+    run_id: str
+    scores: list[ScoreIn]
+
+
 class RunIn(BaseModel):
     run_id: str
     name: str
@@ -46,6 +63,7 @@ class RunIn(BaseModel):
     total_cost_usd: float = 0.0
     error: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    scores: list[ScoreIn] = Field(default_factory=list)
     spans: list[SpanIn] = Field(default_factory=list)
 
 
@@ -59,6 +77,7 @@ class RunSummary(BaseModel):
     total_tokens: int
     total_cost_usd: float
     span_count: int
+    scores: list[ScoreIn] = Field(default_factory=list)
     error: Optional[str] = None
 
 

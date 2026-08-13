@@ -25,7 +25,18 @@ FIELDS = {
     "error_span_count": lambda r: sum(1 for s in (r.get("spans") or []) if s.get("status") == "error"),
     "retry_count": lambda r: sum(1 for s in (r.get("spans") or []) if s.get("retry_of")),
     "name": lambda r: r.get("name"),
+    # quality: lets a score regression page you like any other failure
+    "failed_score_count": lambda r: sum(1 for s in (r.get("scores") or []) if s.get("passed") is False),
+    "min_score": lambda r: min([float(s["value"]) for s in (r.get("scores") or [])], default=1.0),
 }
+
+
+def score_field(run: dict, name: str) -> Optional[float]:
+    """Value of a named score on a run, if present."""
+    for s in run.get("scores") or []:
+        if s.get("name") == name:
+            return float(s["value"])
+    return None
 
 OPS = {
     "gt": lambda a, b: a > b,
@@ -43,7 +54,10 @@ class RuleError(ValueError):
 
 
 def validate_rule(field: str, op: str, value: Any) -> None:
-    if field not in FIELDS:
+    if field.startswith("score:"):
+        if not field[6:].strip():
+            raise RuleError("Name the score to test, e.g. 'score:faithfulness'.")
+    elif field not in FIELDS:
         raise RuleError(f"Unknown field '{field}'. Choose one of: {', '.join(sorted(FIELDS))}.")
     if op not in OPS:
         raise RuleError(f"Unknown operator '{op}'. Choose one of: {', '.join(sorted(OPS))}.")
@@ -60,7 +74,12 @@ def rule_matches(rule: dict, run: dict) -> bool:
     if scope and scope.lower() not in (run.get("name") or "").lower():
         return False
     field, op, value = rule["field"], rule["op"], rule["value"]
-    actual = FIELDS[field](run)
+    if field.startswith("score:"):
+        actual = score_field(run, field[6:])
+        if actual is None:
+            return False  # run wasn't scored on this metric
+    else:
+        actual = FIELDS[field](run)
     if op in ("gt", "gte", "lt", "lte"):
         try:
             return OPS[op](float(actual), float(value))
@@ -70,7 +89,8 @@ def rule_matches(rule: dict, run: dict) -> bool:
 
 
 def _describe(rule: dict, run: dict) -> str:
-    actual = FIELDS[rule["field"]](run)
+    f = rule["field"]
+    actual = score_field(run, f[6:]) if f.startswith("score:") else FIELDS[f](run)
     return f"{rule['field']} is {actual} ({rule['op']} {rule['value']})"
 
 

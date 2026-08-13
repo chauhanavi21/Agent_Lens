@@ -18,7 +18,7 @@ def _to_dict(row: RunRow) -> dict:
         "tags": row.tags or [], "started_at": row.started_at, "ended_at": row.ended_at,
         "duration_ms": row.duration_ms, "total_tokens": row.total_tokens,
         "total_cost_usd": row.total_cost_usd, "error": row.error,
-        "metadata": row.meta or {}, "spans": row.spans or [],
+        "metadata": row.meta or {}, "scores": row.scores or [], "spans": row.spans or [],
     }
 
 
@@ -45,7 +45,7 @@ async def list_runs(
             run_id=r.run_id, name=r.name, status=r.status, tags=r.tags or [],
             started_at=r.started_at, duration_ms=r.duration_ms,
             total_tokens=r.total_tokens, total_cost_usd=r.total_cost_usd,
-            span_count=len(r.spans or []), error=r.error,
+            span_count=len(r.spans or []), scores=r.scores or [], error=r.error,
         ))
     return out
 
@@ -63,6 +63,31 @@ async def stats(session: AsyncSession = Depends(get_session)):
         "by_status": {s: c for s, c in by_status_rows},
         "total_cost_usd": round(float(cost), 4),
         "total_tokens": int(tokens),
+    }
+
+
+@router.get("/runs/scores")
+async def score_trends(
+    session: AsyncSession = Depends(get_session),
+    name: Optional[str] = Query(default=None, description="Filter to one agent"),
+    limit: int = Query(default=100, le=500),
+):
+    """Score history per metric, oldest first — the shape of quality over time."""
+    stmt = select(RunRow).order_by(desc(RunRow.started_at)).limit(limit)
+    if name:
+        stmt = stmt.where(RunRow.name == name)
+    rows = (await session.execute(stmt)).scalars().all()
+    series: dict[str, list] = {}
+    for r in reversed(rows):
+        for s in r.scores or []:
+            series.setdefault(s["name"], []).append({
+                "run_id": r.run_id, "started_at": r.started_at,
+                "value": s["value"], "passed": s.get("passed"),
+            })
+    return {
+        "metrics": sorted(series),
+        "series": series,
+        "latest": {k: v[-1]["value"] for k, v in series.items() if v},
     }
 
 

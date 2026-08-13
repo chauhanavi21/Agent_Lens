@@ -1,4 +1,5 @@
 import React from 'react'
+import ScoreBar from './ScoreBar'
 import StatusBadge from './StatusBadge'
 
 function ago(ts) {
@@ -47,6 +48,7 @@ export default function RunList({ runs, selectedId, onSelect, filters, onFilters
               <span>{r.total_tokens.toLocaleString()} tok</span>
               <span>${r.total_cost_usd.toFixed(4)}</span>
             </div>
+            <ScoreBar scores={r.scores} compact />
             <div className="run-item-bottom">
               {(r.tags || []).map(t => <span key={t} className="tag">{t}</span>)}
               <button

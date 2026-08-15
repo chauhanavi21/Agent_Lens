@@ -28,6 +28,8 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **Budget guards (tokens/cost)**  |     ✅     |    ❌     |    ❌     |
 | **Timeline / waterfall view**    |     ✅     |    ❌     |    ✅     |
 | **Webhook alert rules**          |     ✅     |    ❌     |    ✅     |
+| **Eval scores on the run graph** |     ✅     |    ✅     |    ❌     |
+| **Quality regression in diffs**  |     ✅     |    ❌     |    ❌     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -87,8 +89,39 @@ one with retries and a failure) so you can explore the DAG and diff views.
 - **Run diff** — pin two runs (★), see which steps appeared, disappeared,
   flipped status, or got slower — with a one-line verdict naming the span
   where behavior first diverged
+- **Quality** — eval scores per run and a sparkline per metric across runs,
+  so a slow regression is visible before anyone files a bug
 - **Alerts** — build webhook rules from the UI and see every rule that has
   fired, including failed deliveries
+
+## Evals
+
+Score a run inline, or attach results from an eval suite afterwards.
+
+```python
+from agentlens import score
+
+@lens.trace("qa_agent")
+def qa_agent(question):
+    answer = generate(question)
+    score("faithfulness", 0.86, source="ragas", threshold=0.85)
+    return answer
+```
+
+```python
+# post-hoc, from a nightly eval harness
+from agentlens import from_ragas
+from ragas import evaluate
+
+result = evaluate(dataset, metrics=[faithfulness, answer_relevancy])
+lens.score_run(run_id, from_ragas(result), source="ragas",
+               thresholds={"faithfulness": 0.85})
+```
+
+A score below its threshold is marked failed. That failure shows on the run,
+appears in a diff as a quality regression, and can trip an alert rule via the
+`score:<name>`, `min_score`, or `failed_score_count` fields — so a quality
+drop pages you the same way an error does. See `examples/eval_agent.py`.
 
 ## Alerts
 
@@ -108,7 +141,8 @@ curl -X POST http://localhost:7430/api/alerts/rules -H 'Content-Type: applicatio
 ```
 
 Testable fields: `status`, `total_cost_usd`, `total_tokens`, `duration_ms`,
-`span_count`, `error_span_count`, `retry_count`, `name`.
+`span_count`, `error_span_count`, `retry_count`, `name`, `min_score`,
+`failed_score_count`, and any named metric via `score:<name>`.
 Operators: `gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `contains`.
 
 Payloads are Slack-compatible (`text`) and carry a structured `alert` object
@@ -172,6 +206,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 │              AgentLens Server (FastAPI)                  │
 │  POST /api/ingest/run                                    │
 │  GET  /api/runs   GET /api/runs/:id   POST /api/runs/diff│
+│  POST /api/ingest/scores  GET /api/runs/scores           │
 │  CRUD /api/alerts/rules   GET /api/alerts/events         │
 └─────────────────┬───────────────────────────────────────┘
                   │
@@ -183,7 +218,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
                   │
 ┌─────────────────┴───────────────────────────────────────┐
 │                 AgentLens UI (React + D3)                │
-│  DAG · timeline · span drawer · run diff · alerts        │
+│  DAG · timeline · diff · quality trends · alerts         │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -209,7 +244,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 ## Roadmap
 
 - [x] Webhook alerts — Slack-compatible rules on any run field
-- [ ] Eval integration — attach Ragas/custom eval scores to runs
+- [x] Eval integration — Ragas/custom scores, thresholds, quality trends
 - [x] Timeline view — Gantt-style waterfall alongside the DAG
 - [ ] LangGraph / AutoGPT native integrations
 - [ ] TypeScript SDK — for LangChain.js and other JS agent frameworks

@@ -96,3 +96,20 @@ const demoState = {
     { id: 'e1', rule_id: 'demo1', rule_name: 'Any failed run', run_id: 'demo-run-b', run_name: 'research_agent', reason: 'status is error (eq error)', delivered: true, fired_at: 0 },
   ],
 }
+
+// --- evals --------------------------------------------------------------- //
+
+export async function scoreTrends(agentName) {
+  if (DEMO) {
+    const series = {}
+    for (const r of [...demoRuns].sort((a, b) => a.started_at - b.started_at)) {
+      for (const s of r.scores || []) {
+        (series[s.name] ||= []).push({ run_id: r.run_id, started_at: r.started_at, value: s.value, passed: s.passed })
+      }
+    }
+    const metrics = Object.keys(series).sort()
+    return { metrics, series, latest: Object.fromEntries(metrics.map(m => [m, series[m].at(-1).value])) }
+  }
+  const q = agentName ? `?name=${encodeURIComponent(agentName)}` : ''
+  return get(`/api/runs/scores${q}`)
+}

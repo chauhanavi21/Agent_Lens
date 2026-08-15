@@ -1,5 +1,6 @@
 import * as d3 from 'd3'
 import React, { useEffect, useRef } from 'react'
+import ScoreBar from './ScoreBar'
 
 const KIND_COLOR = {
   agent: 'var(--kind-agent)',
@@ -107,6 +108,7 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
           <span>{run.duration_ms >= 1000 ? (run.duration_ms / 1000).toFixed(1) + 's' : Math.round(run.duration_ms || 0) + 'ms'}</span>
         </div>
       </div>
+      <ScoreBar scores={run.scores} />
       {run.error && <div className="run-error">{run.error}</div>}
       <div className="dag-canvas" ref={ref} />
       <div className="legend">

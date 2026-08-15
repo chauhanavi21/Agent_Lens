@@ -5,6 +5,7 @@ import RunDiff from './components/RunDiff'
 import RunList from './components/RunList'
 import TimelineView from './components/TimelineView'
 import AlertsPanel from './components/AlertsPanel'
+import ScoreTrend from './components/ScoreTrend'
 import SpanDrawer from './components/SpanDrawer'
 
 export default function App() {
@@ -65,6 +66,7 @@ export default function App() {
           >
             Diff {diffPair.length ? `(${diffPair.length}/2)` : ''}
           </button>
+          <button className={view === 'quality' ? 'tab active' : 'tab'} onClick={() => setView('quality')}>Quality</button>
           <button className={view === 'alerts' ? 'tab active' : 'tab'} onClick={() => setView('alerts')}>Alerts</button>
         </nav>
         {DEMO && <span className="demo-pill">demo data — set VITE_API_URL to connect a server</span>}
@@ -99,6 +101,12 @@ export default function App() {
           )}
           {view === 'diff' && diffPair.length === 2 && (
             <RunDiff runA={diffPair[0]} runB={diffPair[1]} />
+          )}
+          {view === 'quality' && (
+            <div className="quality">
+              <h3>Eval scores over time</h3>
+              <ScoreTrend agentName={run?.name} />
+            </div>
           )}
           {view === 'alerts' && <AlertsPanel />}
         </main>

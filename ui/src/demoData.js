@@ -10,6 +10,10 @@ export const demoRuns = [
   {
     run_id: 'demo-run-a', name: 'research_agent', tags: ['prod', 'rag'], status: 'success',
     started_at: t0, ended_at: t0 + 4.2, duration_ms: 4200, total_tokens: 2840, total_cost_usd: 0.0161, error: null, metadata: {},
+    scores: [
+      { name: 'faithfulness', value: 0.91, source: 'ragas', threshold: 0.85, passed: true, comment: '', span_id: null },
+      { name: 'answer_relevancy', value: 0.88, source: 'ragas', threshold: 0.8, passed: true, comment: '', span_id: null },
+    ],
     spans: [
       span({ span_id: 'a1', name: 'research_agent', kind: 'agent', started_at: t0, ended_at: t0 + 4.2, inputs: "{'query': 'agent observability landscape 2026'}", outputs: "'Report: 3 key findings…'" }),
       span({ span_id: 'a2', parent_id: 'a1', name: 'plan_steps', kind: 'llm', started_at: t0 + 0.05, ended_at: t0 + 0.9, inputs: "'Break the query into research steps'", outputs: "['search', 'retrieve', 'synthesize']", llm: { model: 'gpt-4o-mini', provider: 'openai', input_tokens: 320, output_tokens: 95, total_tokens: 415, cost_usd: 0.000105, prompt_preview: 'Break the query into research steps…', response_preview: '1. search 2. retrieve 3. synthesize' } }),
@@ -22,6 +26,10 @@ export const demoRuns = [
     run_id: 'demo-run-b', name: 'research_agent', tags: ['prod', 'rag'], status: 'error',
     started_at: t0 + 1800, ended_at: t0 + 1808.9, duration_ms: 8900, total_tokens: 6210, total_cost_usd: 0.0342,
     error: 'RuntimeError: synthesis model timeout after 2 retries', metadata: {},
+    scores: [
+      { name: 'faithfulness', value: 0.62, source: 'ragas', threshold: 0.85, passed: false, comment: 'partial context, two claims unsupported', span_id: null },
+      { name: 'answer_relevancy', value: 0.81, source: 'ragas', threshold: 0.8, passed: true, comment: '', span_id: null },
+    ],
     spans: [
       span({ span_id: 'b1', name: 'research_agent', kind: 'agent', started_at: t0 + 1800, ended_at: t0 + 1808.9, status: 'error', inputs: "{'query': 'agent observability landscape 2026'}", error: 'RuntimeError: synthesis model timeout' }),
       span({ span_id: 'b2', parent_id: 'b1', name: 'plan_steps', kind: 'llm', started_at: t0 + 1800.05, ended_at: t0 + 1801.2, inputs: "'Break the query into research steps'", outputs: "['search', 'retrieve', 'synthesize']", llm: { model: 'gpt-4o-mini', provider: 'openai', input_tokens: 320, output_tokens: 110, total_tokens: 430, cost_usd: 0.000114, prompt_preview: 'Break the query into research steps…', response_preview: '1. search 2. retrieve 3. synthesize' } }),

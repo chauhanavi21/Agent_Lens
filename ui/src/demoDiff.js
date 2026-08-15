@@ -32,18 +32,35 @@ export function demoDiff(a, b) {
     if (ta !== tb) ch.tokens = { a: ta, b: tb }
     if (Object.keys(ch).length) changed.push({ path: k, changes: ch })
   }
+  const sa = Object.fromEntries((a.scores || []).map(s => [s.name, s]))
+  const sb = Object.fromEntries((b.scores || []).map(s => [s.name, s]))
+  const scores = [...new Set([...Object.keys(sa), ...Object.keys(sb)])].sort().map(name => ({
+    name,
+    a: sa[name]?.value ?? null,
+    b: sb[name]?.value ?? null,
+    delta: sa[name] && sb[name] ? +(sb[name].value - sa[name].value).toFixed(4) : null,
+    passed_a: sa[name]?.passed ?? null,
+    passed_b: sb[name]?.passed ?? null,
+  })).filter(s => s.delta === null || s.delta !== 0)
+
   const flips = changed.filter(c => c.changes.status)
-  let verdict = 'Runs are structurally and behaviorally equivalent.'
+  const parts = []
+  const regressions = scores.filter(s => s.delta != null && s.delta < 0)
+  if (regressions.length) {
+    const worst = regressions.reduce((m, s) => (s.delta < m.delta ? s : m))
+    parts.push(`Quality dropped: ${worst.name} ${worst.a} → ${worst.b}.`)
+  }
   if (a.status !== b.status && flips.length) {
     const deepest = flips.reduce((m, c) => (c.path.split('.').length > m.path.split('.').length ? c : m))
-    verdict = `Status diverged first at '${deepest.path}'.`
-  } else if (changed.length) verdict = `${changed.length} span(s) changed behavior between runs.`
+    parts.push(`Status diverged first at '${deepest.path}'.`)
+  } else if (changed.length) parts.push(`${changed.length} span(s) changed behavior between runs.`)
+  const verdict = parts.length ? parts.join(' ') : 'Runs are structurally and behaviorally equivalent.'
   const head = r => ({ run_id: r.run_id, name: r.name, status: r.status, duration_ms: r.duration_ms, total_tokens: r.total_tokens, total_cost_usd: r.total_cost_usd })
   return {
     run_a: head(a), run_b: head(b),
     added: added.map(k => ({ path: k, status: pb[k].status })),
     removed: removed.map(k => ({ path: k, status: pa[k].status })),
-    changed,
+    changed, scores,
     summary: { added: added.length, removed: removed.length, changed: changed.length, verdict },
   }
 }

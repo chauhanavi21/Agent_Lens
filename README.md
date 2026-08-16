@@ -30,6 +30,7 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **Webhook alert rules**          |     ✅     |    ❌     |    ✅     |
 | **Eval scores on the run graph** |     ✅     |    ✅     |    ❌     |
 | **Quality regression in diffs**  |     ✅     |    ❌     |    ❌     |
+| **OTLP export _and_ ingest**     |     ✅     |   export  |    ❌     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -93,6 +94,52 @@ one with retries and a failure) so you can explore the DAG and diff views.
   so a slow regression is visible before anyone files a bug
 - **Alerts** — build webhook rules from the UI and see every rule that has
   fired, including failed deliveries
+
+## OpenTelemetry bridge
+
+AgentLens speaks OTLP in both directions, using the OpenTelemetry GenAI
+semantic conventions (v1.41.0).
+
+**Out** — send agent traces to any OTel backend alongside AgentLens, so they
+sit beside the rest of your telemetry instead of in a silo:
+
+```python
+from agentlens import AgentLens, HttpExporter
+from agentlens.otel import MultiExporter, OTLPExporter
+
+lens = AgentLens(exporter=MultiExporter(
+    HttpExporter("http://localhost:7430"),                        # AgentLens UI
+    OTLPExporter("http://localhost:4318", service_name="my-agent"),  # collector
+))
+```
+
+A run arrives in Grafana, Tempo, Honeycomb, Jaeger, or Datadog as a proper
+span tree:
+
+```
+invoke_agent research_agent
+  ├── execute_tool web_search
+  ├── retrieval retrieve_docs
+  └── chat claude-sonnet-4      gen_ai.usage.input_tokens=1980
+```
+
+**In** — point any OTel exporter at `/api/ingest/otlp` and traces from other
+SDKs become AgentLens runs, with the DAG, diffing, and alerting on top. No
+SDK swap needed. See `otel-collector-config.yaml` for a collector that fans
+traces to both at once.
+
+### Notes on the spec
+
+Every `gen_ai.*` attribute still carries **Development** stability in the
+OTel registry, so names can change without a major version bump. AgentLens
+dual-emits by default: GenAI attributes plus `agentlens.*` ones, which
+carry what the spec has no place for yet — retry lineage, per-call cost,
+and eval scores — and are namespaced so they can't collide with a future
+OTel addition. Set `dual_emit=False` for pure convention output.
+
+Prompt and completion content is **not** exported by default, since prompts
+routinely carry user data. Opt in with `capture_content=True` or
+`OTEL_GENAI_CAPTURE_MESSAGE_CONTENT=true`.
 
 ## Evals
 
@@ -206,7 +253,8 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 │              AgentLens Server (FastAPI)                  │
 │  POST /api/ingest/run                                    │
 │  GET  /api/runs   GET /api/runs/:id   POST /api/runs/diff│
-│  POST /api/ingest/scores  GET /api/runs/scores           │
+│  POST /api/ingest/scores  POST /api/ingest/otlp          │
+│  GET  /api/runs/scores                                   │
 │  CRUD /api/alerts/rules   GET /api/alerts/events         │
 └─────────────────┬───────────────────────────────────────┘
                   │
@@ -246,9 +294,12 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 - [x] Webhook alerts — Slack-compatible rules on any run field
 - [x] Eval integration — Ragas/custom scores, thresholds, quality trends
 - [x] Timeline view — Gantt-style waterfall alongside the DAG
-- [ ] LangGraph / AutoGPT native integrations
+- [ ] MCP tracing — trace context across MCP tool calls (W3C context in `params._meta`)
+- [ ] Live streaming ingest — watch a DAG build itself over SSE
+- [ ] LLM-as-judge evals + CI gate that fails a PR on score regression
+- [ ] LangGraph / OpenAI Agents SDK / Pydantic AI integrations
 - [ ] TypeScript SDK — for LangChain.js and other JS agent frameworks
-- [ ] OTEL bridge — export spans as OpenTelemetry traces
+- [x] OTEL bridge — OTLP export and ingest, GenAI semantic conventions
 - [ ] Cloud hosted — managed AgentLens with team sharing
 
 ## Contributing

@@ -1,0 +1,40 @@
+# Example OTel Collector config: fan agent traces to AgentLens and to your
+# existing backend from one pipeline.
+#
+#   docker run -v $(pwd)/otel-collector-config.yaml:/etc/otelcol/config.yaml \
+#     -p 4318:4318 otel/opentelemetry-collector-contrib
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 5s
+  # Prompts and completions often carry user data. Drop the content
+  # attributes before anything leaves the cluster.
+  attributes/redact:
+    actions:
+      - key: gen_ai.input.messages
+        action: delete
+      - key: gen_ai.output.messages
+        action: delete
+
+exporters:
+  otlphttp/agentlens:
+    traces_endpoint: http://host.docker.internal:7430/api/ingest/otlp
+    encoding: json
+  # your existing backend, e.g. Tempo, Jaeger, Honeycomb
+  otlphttp/backend:
+    endpoint: http://tempo:4318
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/redact, batch]
+      exporters: [otlphttp/agentlens, otlphttp/backend]

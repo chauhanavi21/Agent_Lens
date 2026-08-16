@@ -121,3 +121,51 @@ async def ingest_scores(
     }
     background.add_task(evaluate_alerts, run)
     return {"run_id": row.run_id, "scores": len(row.scores)}
+
+
+@router.post("/ingest/otlp", status_code=202)
+async def ingest_otlp(
+    payload: dict,
+    background: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(default=None),
+):
+    """
+    OTLP/HTTP trace receiver. Point any OpenTelemetry exporter here — or an
+    OTel Collector's otlphttp exporter — and agent traces show up as runs
+    with the full DAG, no SDK swap required.
+
+    Accepts the same JSON body as a collector's /v1/traces endpoint.
+    """
+    _check_auth(authorization)
+    from ..otlp import convert_otlp
+
+    try:
+        runs = convert_otlp(payload)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Could not read OTLP payload: {e}")
+    if not runs:
+        return {"accepted": 0, "runs": []}
+
+    accepted = []
+    for run in runs:
+        existing = await session.get(RunRow, run["run_id"])
+        fields = dict(
+            name=run["name"], status=run["status"], tags=run["tags"],
+            started_at=run["started_at"], ended_at=run["ended_at"],
+            duration_ms=run["duration_ms"], total_tokens=run["total_tokens"],
+            total_cost_usd=run["total_cost_usd"], error=run["error"],
+            meta=run["metadata"], scores=run["scores"], spans=run["spans"],
+        )
+        if existing is None:
+            session.add(RunRow(run_id=run["run_id"], **fields))
+        else:
+            for k, v in fields.items():
+                setattr(existing, k, v)
+        accepted.append(run["run_id"])
+    await session.commit()
+
+    for run in runs:
+        if run["status"] != "running":
+            background.add_task(evaluate_alerts, run)
+    return {"accepted": len(accepted), "runs": accepted}

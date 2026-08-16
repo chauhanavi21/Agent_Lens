@@ -158,6 +158,115 @@ def test_from_ragas():
     print("test_from_ragas ok")
 
 
+def test_otlp_payload_shape():
+    from agentlens.otel import to_otlp_payload
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    captured = []
+
+    class Capture:
+        def export(self, run):
+            captured.append(run)
+
+    lens = AgentLens(exporter=Capture())
+
+    @lens.tool("web_search")
+    def ws(q):
+        return ["d"]
+
+    @lens.llm_call("chat", model="gpt-4o", provider="openai")
+    def chat(p):
+        class R:
+            model = "gpt-4o"
+            usage = type("U", (), {"prompt_tokens": 100, "completion_tokens": 50})()
+        return R()
+
+    @lens.trace("research_agent")
+    def agent(q):
+        ws(q)
+        chat("hi")
+        return "x"
+
+    agent("q")
+    payload = to_otlp_payload(captured[0], service_name="svc")
+    spans = payload["resourceSpans"][0]["scopeSpans"][0]["spans"]
+
+    # convention span naming: "{operation} {target}"
+    assert sorted(s["name"] for s in spans) == [
+        "chat gpt-4o", "execute_tool web_search", "invoke_agent research_agent"
+    ]
+    # one trace id across the whole run, and a single root
+    assert len({s["traceId"] for s in spans}) == 1
+    assert sum(1 for s in spans if "parentSpanId" not in s) == 1
+    # OTLP id widths are fixed
+    assert all(len(s["traceId"]) == 32 and len(s["spanId"]) == 16 for s in spans)
+
+    llm = next(s for s in spans if s["name"].startswith("chat"))
+    attrs = {a["key"]: list(a["value"].values())[0] for a in llm["attributes"]}
+    assert attrs["gen_ai.system"] == "openai"
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+    assert attrs["gen_ai.usage.input_tokens"] == "100"   # OTLP ints are strings
+    assert attrs["gen_ai.operation.name"] == "chat"
+    assert float(attrs["agentlens.cost.usd"]) > 0        # cost has no gen_ai home
+    print("test_otlp_payload_shape ok")
+
+
+def test_otlp_content_is_opt_in():
+    from agentlens.otel import to_otlp_payload
+
+    captured = []
+
+    class Capture:
+        def export(self, run):
+            captured.append(run)
+
+    lens = AgentLens(exporter=Capture())
+
+    @lens.llm_call("chat", model="gpt-4o")
+    def chat(prompt):
+        class R:
+            model = "gpt-4o"
+            usage = type("U", (), {"prompt_tokens": 10, "completion_tokens": 5})()
+        return R()
+
+    @lens.trace("a")
+    def agent():
+        return chat("my social security number is 123-45-6789")
+
+    agent()
+    run = captured[0]
+
+    off = to_otlp_payload(run, capture_content=False)
+    keys = {a["key"] for s in off["resourceSpans"][0]["scopeSpans"][0]["spans"] for a in s["attributes"]}
+    assert "gen_ai.input.messages" not in keys  # prompts stay out by default
+
+    on = to_otlp_payload(run, capture_content=True)
+    keys = {a["key"] for s in on["resourceSpans"][0]["scopeSpans"][0]["spans"] for a in s["attributes"]}
+    assert "gen_ai.input.messages" in keys
+    print("test_otlp_content_is_opt_in ok")
+
+
+def test_multi_exporter_isolates_failures():
+    from agentlens.otel import MultiExporter
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+
+    class Broken:
+        def export(self, run):
+            raise RuntimeError("collector down")
+
+    lens = AgentLens(exporter=MultiExporter(Broken(), FileExporter(path)))
+
+    @lens.trace("resilient")
+    def agent():
+        return "ok"
+
+    assert agent() == "ok"
+    # the healthy exporter still received the run
+    assert json.loads(open(path).read().strip())["name"] == "resilient"
+    print("test_multi_exporter_isolates_failures ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
@@ -166,4 +275,7 @@ if __name__ == "__main__":
     test_scores()
     test_score_outside_run_is_safe()
     test_from_ragas()
+    test_otlp_payload_shape()
+    test_otlp_content_is_opt_in()
+    test_multi_exporter_isolates_failures()
     print("all SDK tests passed")

@@ -30,6 +30,8 @@ class SpanIn(BaseModel):
     outputs: str = ""
     error: Optional[str] = None
     retry_of: Optional[str] = None
+    remote_parent_id: Optional[str] = None
+    service: Optional[str] = None
     llm: Optional[LLMMetadataIn] = None
     attributes: dict[str, Any] = Field(default_factory=dict)
 
@@ -53,6 +55,7 @@ class ScoresIn(BaseModel):
 
 class RunIn(BaseModel):
     run_id: str
+    trace_id: Optional[str] = None
     name: str
     tags: list[str] = Field(default_factory=list)
     status: str

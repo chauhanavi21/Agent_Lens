@@ -26,6 +26,15 @@ export default function SpanDrawer({ span, onClose }) {
       <Row label="Duration">{span.duration_ms != null ? `${span.duration_ms} ms` : 'running'}</Row>
       <Row label="Span ID"><code>{span.span_id}</code></Row>
       {span.retry_of && <Row label="Retry of"><code>{span.retry_of}</code></Row>}
+      {span.service && <Row label="Recorded by">{span.service}</Row>}
+      {span.remote_parent_id && (
+        <Row label="Called from"><code>{span.remote_parent_id}</code> (another process)</Row>
+      )}
+      {Object.keys(span.attributes || {}).length > 0 && (
+        <Row label="Attributes">
+          <pre>{Object.entries(span.attributes).map(([k, v]) => `${k} = ${v}`).join('\n')}</pre>
+        </Row>
+      )}
       <Row label="Inputs"><pre>{span.inputs}</pre></Row>
       <Row label="Outputs"><pre>{span.outputs}</pre></Row>
       {span.error && <Row label="Error"><pre className="pre-error">{span.error}</pre></Row>}

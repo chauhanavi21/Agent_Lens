@@ -26,6 +26,7 @@ class SpanKind(str, Enum):
     LLM = "llm"              # raw LLM call
     CHAIN = "chain"          # sub-chain or sub-agent
     RETRIEVAL = "retrieval"  # RAG retrieval step
+    MCP = "mcp"              # tool call over the Model Context Protocol
     CUSTOM = "custom"
 
 
@@ -83,6 +84,10 @@ class Span:
     outputs: str = ""
     error: Optional[str] = None
     retry_of: Optional[str] = None   # span_id of the attempt this retries
+    # Set on a span whose parent lives in another process (an MCP server
+    # executing a tool the agent called). The server stitches on this.
+    remote_parent_id: Optional[str] = None
+    service: Optional[str] = None    # which process recorded this span
     llm: Optional[LLMMetadata] = None
     attributes: dict[str, Any] = field(default_factory=dict)
 
@@ -112,6 +117,8 @@ class Span:
             "outputs": self.outputs,
             "error": self.error,
             "retry_of": self.retry_of,
+            "remote_parent_id": self.remote_parent_id,
+            "service": self.service,
             "llm": self.llm.to_dict() if self.llm else None,
             "attributes": self.attributes,
         }
@@ -123,6 +130,8 @@ class AgentRun:
 
     name: str
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    # W3C trace id, shared with every process participating in this run
+    trace_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     tags: list[str] = field(default_factory=list)
     status: SpanStatus = SpanStatus.RUNNING
     started_at: float = field(default_factory=time.time)
@@ -165,6 +174,7 @@ class AgentRun:
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "trace_id": self.trace_id,
             "name": self.name,
             "tags": self.tags,
             "status": self.status.value,

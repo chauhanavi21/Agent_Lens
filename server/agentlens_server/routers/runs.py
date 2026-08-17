@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..diff import diff_runs
 from ..models import RunRow
+from ..stitching import is_child_run, stitch
 from ..schemas import DiffRequest, RunSummary
 
 router = APIRouter(tags=["runs"])
@@ -14,7 +15,7 @@ router = APIRouter(tags=["runs"])
 
 def _to_dict(row: RunRow) -> dict:
     return {
-        "run_id": row.run_id, "name": row.name, "status": row.status,
+        "run_id": row.run_id, "trace_id": row.trace_id, "name": row.name, "status": row.status,
         "tags": row.tags or [], "started_at": row.started_at, "ended_at": row.ended_at,
         "duration_ms": row.duration_ms, "total_tokens": row.total_tokens,
         "total_cost_usd": row.total_cost_usd, "error": row.error,
@@ -30,8 +31,13 @@ async def list_runs(
     tag: Optional[str] = Query(default=None),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
+    include_remote: bool = Query(default=False, description="Include MCP server / sub-agent runs"),
 ):
     stmt = select(RunRow).order_by(desc(RunRow.started_at)).limit(limit).offset(offset)
+    # remote continuations show inside their caller's DAG, not as separate
+    # top-level runs — unless asked for explicitly
+    if not include_remote:
+        stmt = stmt.where(RunRow.is_remote == False)  # noqa: E712
     if status:
         stmt = stmt.where(RunRow.status == status)
     if name:
@@ -96,7 +102,18 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
     row = await session.get(RunRow, run_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
-    return _to_dict(row)
+    run = _to_dict(row)
+
+    # graft in any remote runs sharing this trace (MCP servers, sub-agents)
+    if row.trace_id:
+        siblings = (await session.execute(
+            select(RunRow).where(RunRow.trace_id == row.trace_id, RunRow.run_id != row.run_id)
+        )).scalars().all()
+        children = [_to_dict(r) for r in siblings]
+        children = [c for c in children if is_child_run(c)]
+        if children:
+            run = stitch(run, children)
+    return run
 
 
 @router.post("/runs/diff")

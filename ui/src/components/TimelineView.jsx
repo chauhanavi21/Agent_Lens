@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react'
 const KIND_COLOR = {
   agent: 'var(--kind-agent)', llm: 'var(--kind-llm)', tool: 'var(--kind-tool)',
   retrieval: 'var(--kind-retrieval)', chain: 'var(--kind-chain)', custom: 'var(--kind-custom)',
+  mcp: 'var(--kind-mcp)',
 }
 
 const fmt = ms => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`)
@@ -67,6 +68,7 @@ export default function TimelineView({ run, selectedSpan, onSelectSpan }) {
                 <span className="tl-name">{s.name}</span>
                 {s.retry_of && <span className="tl-flag retry">↻</span>}
                 {s.status === 'error' && <span className="tl-flag err">✕</span>}
+                {s.service && <span className="tl-svc">{s.service}</span>}
               </div>
               <div className="tl-track">
                 <div

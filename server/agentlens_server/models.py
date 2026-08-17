@@ -17,6 +17,7 @@ class RunRow(Base):
     __tablename__ = "runs"
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(String(64), index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     status: Mapped[str] = mapped_column(String(16), index=True)
     tags: Mapped[list] = mapped_column(default=list)
@@ -27,6 +28,7 @@ class RunRow(Base):
     total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     error: Mapped[str] = mapped_column(Text, nullable=True)
     meta: Mapped[dict] = mapped_column(default=dict)
+    is_remote: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     scores: Mapped[list] = mapped_column(default=list)
     spans: Mapped[list] = mapped_column(default=list)
 

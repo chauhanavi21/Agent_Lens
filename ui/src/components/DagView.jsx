@@ -7,6 +7,7 @@ const KIND_COLOR = {
   llm: 'var(--kind-llm)',
   tool: 'var(--kind-tool)',
   retrieval: 'var(--kind-retrieval)',
+  mcp: 'var(--kind-mcp)',
   chain: 'var(--kind-chain)',
   custom: 'var(--kind-custom)',
 }
@@ -29,7 +30,7 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
     let root
     try { root = strat(spans) } catch { return }
 
-    const nodeW = 168, nodeH = 54
+    const nodeW = 168, nodeH = 62
     const tree = d3.tree().nodeSize([nodeW + 26, nodeH + 56])
     tree(root)
     const xs = root.descendants().map(d => d.x)
@@ -93,6 +94,11 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
 
     node.filter(d => d.data.status === 'error')
       .append('text').attr('x', nodeW - 14).attr('y', 20).attr('class', 'node-err').text('✕')
+    // a span recorded by another process — mark where the boundary is
+    node.filter(d => d.data.service)
+      .append('text').attr('x', 12).attr('y', nodeH - 4).attr('class', 'node-svc')
+      .text(d => `⇄ ${d.data.service}`)
+
     node.filter(d => d.data.retry_of)
       .append('text').attr('x', nodeW - 14).attr('y', 38).attr('class', 'node-retry').text('↻')
   }, [run, selectedSpan, onSelectSpan])

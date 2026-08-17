@@ -9,6 +9,7 @@ from ..alerts import _describe, build_payload, dispatch, rule_matches
 from ..config import API_KEY
 from ..db import SessionLocal, get_session
 from ..models import AlertEventRow, AlertRuleRow, RunRow
+from ..stitching import is_child_run
 from ..schemas import RunIn, ScoresIn
 
 router = APIRouter(tags=["ingest"])
@@ -62,6 +63,8 @@ async def ingest_run(
     row = await session.get(RunRow, run.run_id)
     spans = [s.model_dump() for s in run.spans]
     payload = dict(
+        trace_id=run.trace_id or run.run_id,
+        is_remote=any(s.get("remote_parent_id") for s in spans),
         name=run.name,
         status=run.status,
         tags=run.tags,

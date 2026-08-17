@@ -267,6 +267,122 @@ def test_multi_exporter_isolates_failures():
     print("test_multi_exporter_isolates_failures ok")
 
 
+def test_traceparent_roundtrip():
+    from agentlens import format_traceparent, parse_traceparent
+
+    tp = format_traceparent("a" * 32, "b" * 16)
+    assert tp == f"00-{'a' * 32}-{'b' * 16}-01"
+    parsed = parse_traceparent(tp)
+    assert parsed["trace_id"] == "a" * 32 and parsed["parent_span_id"] == "b" * 16
+
+    # short ids are padded to the widths the spec requires
+    assert len(parse_traceparent(format_traceparent("abc", "def"))["trace_id"]) == 32
+
+    # malformed headers are rejected rather than half-parsed
+    assert parse_traceparent("") is None
+    assert parse_traceparent("garbage") is None
+    assert parse_traceparent(f"00-{'0' * 32}-{'b' * 16}-01") is None  # all-zero trace id
+    assert parse_traceparent(f"00-{'z' * 32}-{'b' * 16}-01") is None  # not hex
+    assert parse_traceparent("00-abc-def-01") is None                 # wrong widths
+    print("test_traceparent_roundtrip ok")
+
+
+def test_mcp_context_propagation():
+    from agentlens import mcp_server_span, trace_mcp_session
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(json.loads(json.dumps(run.to_dict())))
+
+    lens, server_lens = AgentLens(exporter=Capture()), AgentLens(exporter=Capture())
+
+    @mcp_server_span(server_lens, server_name="github")
+    def create_issue(arguments=None, _meta=None):
+        return {"content": [], "isError": False}
+
+    class FakeSession:
+        transport = "stdio"
+
+        def call_tool(self, name, arguments=None):
+            # the server only ever sees what crossed the wire
+            return create_issue(arguments=arguments, _meta=(arguments or {}).get("_meta"))
+
+    @lens.trace("issue_agent")
+    def agent():
+        session = trace_mcp_session(lens, FakeSession(), server_name="github")
+        return session.call_tool("create_issue", {"title": "t"})
+
+    agent()
+    agent_run = next(r for r in runs if r["name"] == "issue_agent")
+    server_run = next(r for r in runs if r["name"].startswith("github."))
+
+    # both processes agree on the trace
+    assert agent_run["trace_id"] == server_run["trace_id"]
+    # the server's root points at the client span, not the agent root
+    client = next(s for s in agent_run["spans"] if s["kind"] == "mcp")
+    assert server_run["spans"][0]["remote_parent_id"] == client["span_id"]
+    # `service` names the recording process; the target is an attribute
+    assert client["service"] is None
+    assert client["attributes"]["mcp.server.name"] == "github"
+    assert server_run["spans"][0]["service"] == "github"
+    print("test_mcp_context_propagation ok")
+
+
+def test_mcp_is_error_payload():
+    from agentlens import mcp_server_span, trace_mcp_session
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(json.loads(json.dumps(run.to_dict())))
+
+    lens = AgentLens(exporter=Capture())
+
+    class FakeSession:
+        transport = "stdio"
+
+        def call_tool(self, name, arguments=None):
+            # MCP reports tool failure in the payload, not by raising
+            return {"content": [{"type": "text", "text": "rate limited"}], "isError": True}
+
+    @lens.trace("agent")
+    def agent():
+        return trace_mcp_session(lens, FakeSession()).call_tool("x", {})
+
+    agent()
+    span = next(s for s in runs[0]["spans"] if s["kind"] == "mcp")
+    assert span["status"] == "error", "isError payload should mark the span failed"
+    assert span["attributes"]["mcp.tool.is_error"] is True
+    print("test_mcp_is_error_payload ok")
+
+
+def test_mcp_server_works_without_incoming_context():
+    from agentlens import mcp_server_span
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    server_lens = AgentLens(exporter=Capture())
+
+    @mcp_server_span(server_lens, server_name="github")
+    def create_issue(arguments=None, _meta=None):
+        return {"isError": False}
+
+    # a client that doesn't propagate context still gets a usable trace
+    create_issue(arguments={"title": "t"})
+    run = runs[0]
+    assert run["status"] == "success"
+    assert run["spans"][0]["remote_parent_id"] is None
+    assert run["trace_id"]
+    print("test_mcp_server_works_without_incoming_context ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
@@ -278,4 +394,8 @@ if __name__ == "__main__":
     test_otlp_payload_shape()
     test_otlp_content_is_opt_in()
     test_multi_exporter_isolates_failures()
+    test_traceparent_roundtrip()
+    test_mcp_context_propagation()
+    test_mcp_is_error_payload()
+    test_mcp_server_works_without_incoming_context()
     print("all SDK tests passed")

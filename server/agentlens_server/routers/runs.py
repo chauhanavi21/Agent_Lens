@@ -101,6 +101,15 @@ async def score_trends(
 async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
     row = await session.get(RunRow, run_id)
     if row is None:
+        # still executing: serve the in-memory shape so the UI can open a
+        # run before it has finished
+        from ..live import live_store
+
+        partial = live_store.get(run_id)
+        if partial is not None:
+            return {**partial, "live": True, "scores": partial.get("scores", []),
+                    "total_tokens": 0, "total_cost_usd": 0.0, "error": None,
+                    "metadata": {"live": True}}
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
     run = _to_dict(row)
 

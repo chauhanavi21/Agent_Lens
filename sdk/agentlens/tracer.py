@@ -24,6 +24,7 @@ from . import context as ctx
 from .cost import estimate_cost_usd
 from .exporters import Exporter, HttpExporter, ConsoleExporter
 from .models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
+from .streaming import run_end_event, run_start_event, span_event
 
 
 class BudgetExceeded(RuntimeError):
@@ -57,6 +58,17 @@ class AgentLens:
             raise ValueError("on_budget must be 'raise', 'pause', or 'warn'")
         self.on_budget = on_budget
 
+    def _emit(self, event: dict) -> None:
+        """Send a lifecycle event if the exporter wants them. Never raises:
+        a live view is a convenience, not something worth failing a run over."""
+        emit = getattr(self.exporter, "export_event", None)
+        if emit is None:
+            return
+        try:
+            emit(event)
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------ #
     # decorators
     # ------------------------------------------------------------------ #
@@ -86,6 +98,8 @@ class AgentLens:
                 run.spans.append(root)
                 run_token = ctx.set_run(run)
                 span_token = ctx.set_span(root)
+                self._emit(run_start_event(run))
+                self._emit(span_event(run, root, "span_start"))
                 return run, root, run_token, span_token
 
             def _finish(run, root, run_token, span_token, error: Optional[BaseException]):
@@ -99,6 +113,8 @@ class AgentLens:
                     tb = "".join(traceback.format_exception(error)).strip()
                     root.finish(SpanStatus.ERROR, error=tb)
                     run.finish(SpanStatus.ERROR, error=str(error))
+                self._emit(span_event(run, root, "span_end"))
+                self._emit(run_end_event(run))
                 ctx.reset_span(span_token)
                 ctx.reset_run(run_token)
                 try:
@@ -164,6 +180,7 @@ class AgentLens:
                 )
                 run.spans.append(span)
                 token = ctx.set_span(span)
+                self._emit(span_event(run, span, "span_start"))
                 return span, token
 
             def _close(span: Span, token, error: Optional[BaseException]) -> None:
@@ -172,6 +189,9 @@ class AgentLens:
                 else:
                     tb = "".join(traceback.format_exception(error)).strip()
                     span.finish(SpanStatus.ERROR, error=tb)
+                run = ctx.current_run()
+                if run is not None:
+                    self._emit(span_event(run, span, "span_end"))
                 ctx.reset_span(token)
                 self._check_budget()
 

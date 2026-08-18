@@ -383,6 +383,94 @@ def test_mcp_server_works_without_incoming_context():
     print("test_mcp_server_works_without_incoming_context ok")
 
 
+def test_streaming_event_lifecycle():
+    from agentlens.streaming import run_end_event, run_start_event, span_event  # noqa: F401
+
+    events = []
+
+    class Recorder:
+        def export(self, run):
+            events.append(("run_export", run.name))
+
+        def export_event(self, event):
+            name = (event.get("span") or {}).get("name") or event["run"]["name"]
+            events.append((event["type"], name))
+
+    lens = AgentLens(exporter=Recorder())
+
+    @lens.tool("web_search")
+    def web_search(q):
+        return ["d"]
+
+    @lens.trace("live_agent")
+    def agent(q):
+        web_search(q)
+        return "done"
+
+    agent("q")
+
+    # every span opens before it closes, and the run brackets everything
+    assert events[0] == ("run_start", "live_agent")
+    assert events[-1] == ("run_export", "live_agent")
+    assert events[-2] == ("run_end", "live_agent")
+    starts = [n for t, n in events if t == "span_start"]
+    ends = [n for t, n in events if t == "span_end"]
+    assert starts == ["live_agent", "web_search"]
+    assert ends == ["web_search", "live_agent"]  # inner closes first
+    print("test_streaming_event_lifecycle ok")
+
+
+def test_streaming_events_are_optional():
+    # an exporter without export_event must still work untouched
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    @lens.trace("plain")
+    def agent():
+        return "ok"
+
+    assert agent() == "ok"
+    assert json.loads(open(path).read().strip())["name"] == "plain"
+    print("test_streaming_events_are_optional ok")
+
+
+def test_streaming_exporter_never_breaks_the_agent():
+    class Hostile:
+        def export(self, run):
+            raise RuntimeError("server down")
+
+        def export_event(self, event):
+            raise RuntimeError("server down")
+
+    lens = AgentLens(exporter=Hostile())
+
+    @lens.tool("step")
+    def step():
+        return 1
+
+    @lens.trace("resilient")
+    def agent():
+        return step() + 1
+
+    # tracing failures must not surface to the caller
+    assert agent() == 2
+    print("test_streaming_exporter_never_breaks_the_agent ok")
+
+
+def test_stream_exporter_bounds_its_queue():
+    from agentlens.streaming import StreamExporter
+
+    # nothing is listening on this port, so the drain thread can't keep up
+    exporter = StreamExporter("http://127.0.0.1:9", max_queue=5, timeout=0.01)
+    for i in range(200):
+        exporter.export_event({"type": "span_start", "run_id": "r", "span": {"span_id": str(i)}})
+
+    # memory stays bounded rather than growing with the agent's work
+    assert exporter._q.qsize() <= 5
+    assert exporter.dropped > 0
+    print("test_stream_exporter_bounds_its_queue ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
@@ -398,4 +486,8 @@ if __name__ == "__main__":
     test_mcp_context_propagation()
     test_mcp_is_error_payload()
     test_mcp_server_works_without_incoming_context()
+    test_streaming_event_lifecycle()
+    test_streaming_events_are_optional()
+    test_streaming_exporter_never_breaks_the_agent()
+    test_stream_exporter_bounds_its_queue()
     print("all SDK tests passed")

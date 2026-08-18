@@ -8,6 +8,7 @@ the execution DAG, tool calls, retries, cost per node, and run diffs.
 from .context import current_run, current_span
 from .evals import Score, from_ragas, score
 from .exporters import ConsoleExporter, FileExporter, HttpExporter
+from .streaming import StreamExporter
 from .mcp import (
     extract_context,
     format_traceparent,
@@ -27,6 +28,7 @@ __all__ = [
     "ConsoleExporter",
     "FileExporter",
     "HttpExporter",
+    "StreamExporter",
     "LLMMetadata",
     "Span",
     "SpanKind",

@@ -33,6 +33,7 @@ export default function RunList({ runs, selectedId, onSelect, filters, onFilters
             key={r.run_id}
             className={[
               'run-item',
+              r.live ? 'live' : '',
               r.run_id === selectedId ? 'selected' : '',
               diffPair.includes(r.run_id) ? 'pinned' : '',
             ].join(' ')}
@@ -40,10 +41,10 @@ export default function RunList({ runs, selectedId, onSelect, filters, onFilters
           >
             <div className="run-item-top">
               <span className="run-name">{r.name}</span>
-              <StatusBadge status={r.status} />
+              {r.live ? <span className="badge badge-running pulse">running</span> : <StatusBadge status={r.status} />}
             </div>
             <div className="run-item-meta">
-              <span>{ago(r.started_at)}</span>
+              <span>{r.live ? 'now' : ago(r.started_at)}</span>
               <span>{r.span_count} spans</span>
               <span>{r.total_tokens.toLocaleString()} tok</span>
               <span>${r.total_cost_usd.toFixed(4)}</span>

@@ -32,6 +32,7 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **Quality regression in diffs**  |     ✅     |    ❌     |    ❌     |
 | **OTLP export _and_ ingest**     |     ✅     |   export  |    ❌     |
 | **MCP tracing across processes** |     ✅     |    ❌     |    ❌     |
+| **Live streaming DAG (SSE)**     |     ✅     |    ❌     |    ❌     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -95,6 +96,36 @@ one with retries and a failure) so you can explore the DAG and diff views.
   so a slow regression is visible before anyone files a bug
 - **Alerts** — build webhook rules from the UI and see every rule that has
   fired, including failed deliveries
+
+## Live streaming
+
+Batch tracing sends one payload when a run ends — so a run that hangs, gets
+OOM-killed, or is simply still going never appears at all. Those are the
+runs you most want to see.
+
+```python
+from agentlens import AgentLens, StreamExporter
+
+lens = AgentLens(exporter=StreamExporter("http://localhost:7430"))
+```
+
+Each span is pushed as it opens and closes, and the UI subscribes over SSE
+at `/api/stream`, so the DAG draws itself node by node while the agent
+works. `GET /api/live/runs` lists what's executing right now; opening a live
+run shows its partial DAG immediately.
+
+Design notes:
+
+- **Events are best-effort, the final run is the source of truth.** The
+  exporter's queue is bounded and drops oldest-first, so a slow or dead
+  server costs you the live view — never the agent's memory or its data.
+- **Live state is in memory and disposable.** Persistence happens on the
+  run's final export. A multi-process deployment swaps the broker for Redis
+  pub/sub; the interface is small enough to be a drop-in.
+- **Spans arriving before `run_start` are kept**, not dropped, so a browser
+  connecting mid-run still sees a coherent DAG.
+- **Reconnects trust the server's snapshot**, since `EventSource` can't tell
+  you whether the gap lost events.
 
 ## MCP tracing
 
@@ -304,6 +335,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 │  GET  /api/runs   GET /api/runs/:id   POST /api/runs/diff│
 │  (runs/:id stitches remote MCP spans into one DAG)       │
 │  POST /api/ingest/scores  POST /api/ingest/otlp          │
+│  POST /api/ingest/event   GET  /api/stream (SSE)         │
 │  GET  /api/runs/scores                                   │
 │  CRUD /api/alerts/rules   GET /api/alerts/events         │
 └─────────────────┬───────────────────────────────────────┘
@@ -316,7 +348,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
                   │
 ┌─────────────────┴───────────────────────────────────────┐
 │                 AgentLens UI (React + D3)                │
-│  DAG · timeline · diff · quality trends · alerts         │
+│  live DAG · timeline · diff · quality · alerts           │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -345,7 +377,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 - [x] Eval integration — Ragas/custom scores, thresholds, quality trends
 - [x] Timeline view — Gantt-style waterfall alongside the DAG
 - [x] MCP tracing — W3C trace context across MCP tool calls, cross-process DAG stitching
-- [ ] Live streaming ingest — watch a DAG build itself over SSE
+- [x] Live streaming ingest — SSE, live DAG, partial runs visible mid-flight
 - [ ] LLM-as-judge evals + CI gate that fails a PR on score regression
 - [ ] LangGraph / OpenAI Agents SDK / Pydantic AI integrations
 - [ ] TypeScript SDK — for LangChain.js and other JS agent frameworks

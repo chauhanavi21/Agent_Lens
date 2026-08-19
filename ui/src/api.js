@@ -113,3 +113,15 @@ export async function scoreTrends(agentName) {
   const q = agentName ? `?name=${encodeURIComponent(agentName)}` : ''
   return get(`/api/runs/scores${q}`)
 }
+
+// --- live streaming ------------------------------------------------------ //
+
+export function streamUrl(runId) {
+  const q = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
+  return `${BASE}/api/stream${q}`
+}
+
+export async function listLiveRuns() {
+  if (DEMO) return { runs: [], subscribers: 0 }
+  return get('/api/live/runs')
+}

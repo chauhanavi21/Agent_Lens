@@ -72,6 +72,7 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
     node.append('rect')
       .attr('width', nodeW).attr('height', nodeH).attr('rx', 8)
       .attr('class', d => `node-box status-${d.data.status}` +
+        (d.data.ended_at ? '' : ' node-running') +
         (selectedSpan && selectedSpan.span_id === d.data.span_id ? ' node-selected' : ''))
       .attr('stroke', d => KIND_COLOR[d.data.kind] || KIND_COLOR.custom)
 
@@ -106,7 +107,7 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
   return (
     <div className="dag-wrap">
       <div className="dag-header">
-        <h2>{run.name}</h2>
+        <h2>{run.name}{run.live && <span className="live-tag">live</span>}</h2>
         <div className="dag-stats">
           <span>{run.spans.length} spans</span>
           <span>{(run.total_tokens || 0).toLocaleString()} tokens</span>

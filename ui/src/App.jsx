@@ -6,6 +6,7 @@ import RunList from './components/RunList'
 import TimelineView from './components/TimelineView'
 import AlertsPanel from './components/AlertsPanel'
 import ScoreTrend from './components/ScoreTrend'
+import useLiveRuns from './useLiveRuns'
 import SpanDrawer from './components/SpanDrawer'
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
   const [view, setView] = useState('dag')     // 'dag' | 'diff' | 'alerts'
   const [runMode, setRunMode] = useState('dag') // 'dag' | 'timeline'
   const [error, setError] = useState(null)
+  const { liveRuns, liveById, connected } = useLiveRuns()
 
   const refresh = useCallback(async () => {
     try {
@@ -32,15 +34,32 @@ export default function App() {
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 5000) // live polling
+    // With SSE connected, finished runs still need a periodic pull (the
+    // stream carries spans, not the persisted rollups) — just far less often.
+    const id = setInterval(refresh, connected ? 20000 : 5000)
     return () => clearInterval(id)
-  }, [refresh])
+  }, [refresh, connected])
 
   useEffect(() => {
     if (!selectedId) return
     setSpan(null)
     getRun(selectedId).then(setRun).catch(e => setError(String(e.message || e)))
   }, [selectedId])
+
+  // a selected run that's still executing is driven by the stream, so the
+  // DAG grows in place instead of waiting for the next fetch
+  const liveSelected = liveById[selectedId]
+  const activeRun = liveSelected ? { ...liveSelected, live: true } : run
+
+  // live runs sit above finished ones and replace their stored twin
+  const liveIds = new Set(liveRuns.map(r => r.run_id))
+  const mergedRuns = [
+    ...liveRuns.map(r => ({
+      ...r, status: 'running', span_count: r.spans?.length || 0,
+      total_tokens: 0, total_cost_usd: 0, scores: [], live: true,
+    })),
+    ...runs.filter(r => !liveIds.has(r.run_id)),
+  ]
 
   const togglePin = runId => {
     setDiffPair(prev => {
@@ -56,6 +75,11 @@ export default function App() {
           <span className="brand-mark">◉</span> AgentLens
           <span className="brand-sub">agent observability runtime</span>
         </div>
+        {connected && (
+          <span className="live-pill" title="Streaming spans over SSE">
+            <i /> live
+          </span>
+        )}
         <nav className="tabs">
           <button className={view === 'dag' ? 'tab active' : 'tab'} onClick={() => setView('dag')}>Runs</button>
           <button
@@ -76,7 +100,7 @@ export default function App() {
 
       <div className="layout">
         <RunList
-          runs={runs}
+          runs={mergedRuns}
           selectedId={selectedId}
           onSelect={id => { setSelectedId(id); setView('dag') }}
           filters={filters}
@@ -85,18 +109,18 @@ export default function App() {
           onTogglePin={togglePin}
         />
         <main className="main">
-          {view === 'dag' && run && (
+          {view === 'dag' && activeRun && (
             <>
               <div className="mode-switch">
                 <button className={runMode === 'dag' ? 'seg active' : 'seg'} onClick={() => setRunMode('dag')}>Graph</button>
                 <button className={runMode === 'timeline' ? 'seg active' : 'seg'} onClick={() => setRunMode('timeline')}>Timeline</button>
               </div>
               {runMode === 'dag'
-                ? <DagView run={run} selectedSpan={span} onSelectSpan={setSpan} />
-                : <TimelineView run={run} selectedSpan={span} onSelectSpan={setSpan} />}
+                ? <DagView run={activeRun} selectedSpan={span} onSelectSpan={setSpan} />
+                : <TimelineView run={activeRun} selectedSpan={span} onSelectSpan={setSpan} />}
             </>
           )}
-          {view === 'dag' && !run && (
+          {view === 'dag' && !activeRun && (
             <div className="empty">Instrument an agent with <code>@lens.trace</code> and runs appear here.</div>
           )}
           {view === 'diff' && diffPair.length === 2 && (
@@ -105,7 +129,7 @@ export default function App() {
           {view === 'quality' && (
             <div className="quality">
               <h3>Eval scores over time</h3>
-              <ScoreTrend agentName={run?.name} />
+              <ScoreTrend agentName={activeRun?.name} />
             </div>
           )}
           {view === 'alerts' && <AlertsPanel />}

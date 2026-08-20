@@ -1,0 +1,66 @@
+# Fail a PR when the agent's eval quality regresses.
+#
+# The shape: run your eval suite against the PR, tag those runs with the PR
+# number, then compare them to whatever `main` last produced. A metric can
+# stay above its floor and still be a regression — that's the case a fixed
+# threshold alone never catches.
+
+name: Agent eval gate
+
+on:
+  pull_request:
+    paths:
+      - "agent/**"
+      - "prompts/**"
+      - "sdk/**"
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install agentlens
+
+      - name: Run the eval suite
+        env:
+          AGENTLENS_ENDPOINT: ${{ secrets.AGENTLENS_ENDPOINT }}
+          AGENTLENS_API_KEY: ${{ secrets.AGENTLENS_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # tag every run so the gate can find them
+          AGENTLENS_RUN_TAG: pr-${{ github.event.pull_request.number }}
+        run: python evals/run_suite.py
+
+      - name: Eval gate
+        env:
+          AGENTLENS_ENDPOINT: ${{ secrets.AGENTLENS_ENDPOINT }}
+          AGENTLENS_API_KEY: ${{ secrets.AGENTLENS_API_KEY }}
+        run: |
+          python -m agentlens.ci gate \
+            --candidate-tag "pr-${{ github.event.pull_request.number }}" \
+            --baseline-tag main \
+            --threshold grounding=0.85 \
+            --threshold task_completion=0.80 \
+            --max-regression 0.03 \
+            --min-runs 5 \
+            --output gate.md
+
+      - name: Comment the result on the PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('gate.md')) return;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: fs.readFileSync('gate.md', 'utf8'),
+            });

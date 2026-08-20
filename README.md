@@ -33,6 +33,8 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **OTLP export _and_ ingest**     |     ✅     |   export  |    ❌     |
 | **MCP tracing across processes** |     ✅     |    ❌     |    ❌     |
 | **Live streaming DAG (SSE)**     |     ✅     |    ❌     |    ❌     |
+| **LLM-as-judge on the trace**    |     ✅     |    ✅     |    ❌     |
+| **CI gate on score regression**  |     ✅     |    ❌     |    ❌     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -96,6 +98,57 @@ one with retries and a failure) so you can explore the DAG and diff views.
   so a slow regression is visible before anyone files a bug
 - **Alerts** — build webhook rules from the UI and see every rule that has
   fired, including failed deliveries
+
+## LLM-as-judge and the CI gate
+
+Ragas covers what you can compute. A judge covers what you can only
+describe — did the agent actually answer, did it invent a tool result, did
+it give up early. The judge reads the **execution trace**, not just the
+final string, so it can see the retry loop that produced the answer.
+
+```bash
+curl -X POST localhost:7430/api/evals/judge \
+  -d '{"run_id": "…", "rubrics": ["grounding", "task_completion"]}'
+```
+
+Built-in rubrics: `task_completion`, `tool_correctness`, `grounding`,
+`efficiency`, `error_handling`. Judged scores are stored in the same shape
+as inline and Ragas scores, so trends, diffs, and alerts treat them
+identically.
+
+### Gating a pull request
+
+```bash
+python -m agentlens.ci gate \
+  --candidate-tag "pr-42" --baseline-tag main \
+  --threshold grounding=0.85 --max-regression 0.03
+```
+
+```
+1 eval check(s) failed: grounding: regressed -0.0700 (limit -0.0300)
+
+  metric           branch  baseline   delta  result
+  ---------------  ------  --------  ------  ------
+  grounding         0.850     0.920  -0.070  FAIL  (regressed -0.0700)
+  task_completion   0.905     0.900  +0.005  pass
+```
+
+The gate asks two questions, and the second is the one that earns its keep:
+
+1. **Absolute** — is any metric below its floor? Catches a branch that was
+   always bad.
+2. **Relative** — did any metric drop more than `--max-regression` against
+   the baseline? Catches a branch that made things *worse* while still
+   passing every fixed threshold. `0.92 → 0.86` clears a 0.85 floor and is
+   exactly the drift nobody notices until it's three releases old.
+
+Also enforced: a metric the baseline measured but this branch stopped
+producing fails as lost coverage, and errored runs fail by default.
+
+Exit codes are `0` pass, `1` failed checks, `2` usage or connection error —
+so an unreachable server can never read as a clean gate. See
+`.github/workflows/eval-gate.yml` for a workflow that runs the suite, gates
+the PR, and comments the table back.
 
 ## Live streaming
 
@@ -336,6 +389,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 │  (runs/:id stitches remote MCP spans into one DAG)       │
 │  POST /api/ingest/scores  POST /api/ingest/otlp          │
 │  POST /api/ingest/event   GET  /api/stream (SSE)         │
+│  POST /api/evals/judge    POST /api/evals/gate           │
 │  GET  /api/runs/scores                                   │
 │  CRUD /api/alerts/rules   GET /api/alerts/events         │
 └─────────────────┬───────────────────────────────────────┘
@@ -378,7 +432,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 - [x] Timeline view — Gantt-style waterfall alongside the DAG
 - [x] MCP tracing — W3C trace context across MCP tool calls, cross-process DAG stitching
 - [x] Live streaming ingest — SSE, live DAG, partial runs visible mid-flight
-- [ ] LLM-as-judge evals + CI gate that fails a PR on score regression
+- [x] LLM-as-judge evals + CI gate that fails a PR on score regression
 - [ ] LangGraph / OpenAI Agents SDK / Pydantic AI integrations
 - [ ] TypeScript SDK — for LangChain.js and other JS agent frameworks
 - [x] OTEL bridge — OTLP export and ingest, GenAI semantic conventions

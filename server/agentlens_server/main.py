@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS
 from .db import init_db
-from .routers import alerts, ingest, runs, stream
+from .routers import alerts, evals, ingest, runs, stream
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ app.include_router(ingest.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(alerts.router, prefix="/api")
 app.include_router(stream.router, prefix="/api")
+app.include_router(evals.router, prefix="/api")
 
 
 @app.get("/api/health")

@@ -6,3 +6,5 @@ dist/
 *.db
 runs.jsonl
 .env
+sdk-ts/dist/
+sdk-ts/node_modules/

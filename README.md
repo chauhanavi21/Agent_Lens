@@ -35,6 +35,7 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **Live streaming DAG (SSE)**     |     ✅     |    ❌     |    ❌     |
 | **LLM-as-judge on the trace**    |     ✅     |    ✅     |    ❌     |
 | **CI gate on score regression**  |     ✅     |    ❌     |    ❌     |
+| **Python _and_ TypeScript SDKs** |     ✅     |    ✅     |    ✅     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -98,6 +99,40 @@ one with retries and a failure) so you can explore the DAG and diff views.
   so a slow regression is visible before anyone files a bug
 - **Alerts** — build webhook rules from the UI and see every rule that has
   fired, including failed deliveries
+
+## TypeScript SDK
+
+Same model, same wire format, so a Python orchestrator calling a Node tool
+service produces one DAG instead of two disconnected views.
+
+```bash
+npm install @agentlens/sdk
+```
+
+```ts
+import { AgentLens, score } from '@agentlens/sdk';
+
+const lens = new AgentLens({ endpoint: 'http://localhost:7430' });
+
+const webSearch = lens.tool('web_search', async (q: string) => search(q), { retries: 2 });
+const summarize = lens.llmCall('summarize', async (docs: string[]) => openai.chat(docs));
+
+const agent = lens.trace('research_agent', async (query: string) => {
+  const result = await summarize(await webSearch(query));
+  score('grounding', 0.91, { threshold: 0.85 });
+  return result;
+}, { tags: ['prod'], maxCostUsd: 0.1 });
+```
+
+Zero runtime dependencies, full type inference through the wrappers, and
+async nesting tracked with `AsyncLocalStorage` so it survives `await`,
+`Promise.all`, and framework callbacks. Wrappers rather than decorators
+because TypeScript decorators only apply to class methods, while most agent
+code is plain functions.
+
+Parity is enforced by test: a TS run and a Python run of the same agent are
+posted to the server and diffed — they align node-for-node, with only
+wall-clock latency differing. See `sdk-ts/`.
 
 ## LLM-as-judge and the CI gate
 
@@ -378,7 +413,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Your Agent Code                       │
-│   @lens.trace  @lens.span  @lens.tool  @lens.llm_call   │
+│   @lens.trace / lens.trace()  ·  Python + TypeScript      │
 └─────────────────┬───────────────────────────────────────┘
                   │  AgentRun JSON (background thread)
                   ▼
@@ -434,7 +469,7 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 - [x] Live streaming ingest — SSE, live DAG, partial runs visible mid-flight
 - [x] LLM-as-judge evals + CI gate that fails a PR on score regression
 - [ ] LangGraph / OpenAI Agents SDK / Pydantic AI integrations
-- [ ] TypeScript SDK — for LangChain.js and other JS agent frameworks
+- [x] TypeScript SDK — zero-dependency, wire-compatible with the Python SDK
 - [x] OTEL bridge — OTLP export and ingest, GenAI semantic conventions
 - [ ] Cloud hosted — managed AgentLens with team sharing
 

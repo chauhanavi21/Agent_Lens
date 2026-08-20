@@ -471,6 +471,41 @@ def test_stream_exporter_bounds_its_queue():
     print("test_stream_exporter_bounds_its_queue ok")
 
 
+def test_ci_threshold_parsing():
+    from agentlens.ci import _parse_thresholds
+
+    assert _parse_thresholds(["grounding=0.85", "task_completion=0.8"]) == {
+        "grounding": 0.85, "task_completion": 0.8
+    }
+    assert _parse_thresholds([]) == {}
+
+    for bad in (["grounding"], ["grounding=abc"]):
+        try:
+            _parse_thresholds(bad)
+            raise AssertionError(f"should have rejected {bad}")
+        except ValueError:
+            pass
+    print("test_ci_threshold_parsing ok")
+
+
+def test_ci_unreachable_server_is_an_error_not_a_pass():
+    from agentlens.ci import EXIT_ERROR, main
+
+    # nothing is listening on port 9; a build must not read this as clean
+    code = main(["--endpoint", "http://127.0.0.1:9", "gate", "--candidate-tag", "pr-1"])
+    assert code == EXIT_ERROR, code
+    print("test_ci_unreachable_server_is_an_error_not_a_pass ok")
+
+
+def test_ci_parser_defaults():
+    from agentlens.ci import build_parser
+
+    args = build_parser().parse_args(["gate", "--candidate-tag", "pr-9"])
+    assert args.max_regression == 0.05 and args.min_runs == 1
+    assert args.baseline_tag is None and args.warn_only is False
+    print("test_ci_parser_defaults ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
@@ -490,4 +525,7 @@ if __name__ == "__main__":
     test_streaming_events_are_optional()
     test_streaming_exporter_never_breaks_the_agent()
     test_stream_exporter_bounds_its_queue()
+    test_ci_threshold_parsing()
+    test_ci_unreachable_server_is_an_error_not_a_pass()
+    test_ci_parser_defaults()
     print("all SDK tests passed")

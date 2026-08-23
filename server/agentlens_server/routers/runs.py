@@ -125,6 +125,27 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
     return run
 
 
+@router.get("/runs/{run_id}/cassette")
+async def cassette(run_id: str, session: AsyncSession = Depends(get_session)):
+    """
+    A replay-ready recording of this run's side effects: tool, LLM,
+    retrieval, and MCP outputs keyed by call order. Save it as a fixture and
+    a production failure becomes a deterministic test that touches no live
+    API.
+
+    Runs traced without `record_outputs=True` still produce a cassette, but
+    from truncated previews — usable for shape assertions, not for feeding
+    real objects back into the agent. The `truncated` flag says which.
+    """
+    row = await session.get(RunRow, run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+
+    from agentlens.replay import Cassette
+
+    return Cassette.from_run(_to_dict(row)).to_dict()
+
+
 @router.post("/runs/diff")
 async def diff(req: DiffRequest, session: AsyncSession = Depends(get_session)):
     a = await session.get(RunRow, req.run_a)

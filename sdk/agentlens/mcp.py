@@ -275,7 +275,13 @@ def mcp_server_span(
             ctx.reset_span(st)
             ctx.reset_run(rt)
             try:
-                lens.exporter.export(run)
+                # same sanitizing path as the tracer, so an MCP server
+                # can't leak what the agent process redacts
+                export = getattr(lens, "_export", None)
+                if export is not None:
+                    export(run)
+                else:
+                    lens.exporter.export(run)
             except Exception:
                 pass
 

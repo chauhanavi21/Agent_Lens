@@ -506,6 +506,514 @@ def test_ci_parser_defaults():
     print("test_ci_parser_defaults ok")
 
 
+def _record_run(record_outputs=True, fail_search=False):
+    """Run a small agent live and return (run_dict, call_counter)."""
+    from agentlens import SpanKind
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path), record_outputs=record_outputs)
+    calls = {"search": 0, "answer": 0}
+
+    @lens.tool("search")
+    def search(q):
+        calls["search"] += 1
+        if fail_search:
+            raise ConnectionError("search API 503")
+        return {"hits": [f"doc about {q}"], "count": 1}
+
+    @lens.span("answer", kind=SpanKind.LLM)
+    def answer(docs):
+        calls["answer"] += 1
+        return f"answer from {docs['count']} doc(s)"
+
+    @lens.trace("qa_agent")
+    def agent(q):
+        return answer(search(q))
+
+    try:
+        agent("paris")
+    except ConnectionError:
+        pass
+    return json.loads(open(path).read().strip()), calls, lens, agent
+
+
+def test_replay_serves_recorded_outputs():
+    from agentlens import Cassette, replay
+
+    run, calls, _lens, agent = _record_run()
+    assert calls == {"search": 1, "answer": 1}
+
+    cassette = Cassette.from_run(run)
+    assert cassette.span_count == 2
+    assert all(not c.truncated for items in cassette.calls.values() for c in items)
+
+    with replay(cassette) as session:
+        result = agent("paris")
+
+    # the recorded world was served; no tool or LLM call ran again
+    assert calls == {"search": 1, "answer": 1}
+    assert result == "answer from 1 doc(s)"
+    assert session.report()["hits"] == 2
+    assert session.report()["diverged"] is False
+    print("test_replay_serves_recorded_outputs ok")
+
+
+def test_replay_runs_agent_logic_for_real():
+    from agentlens import Cassette, replay, SpanKind
+
+    run, calls, _lens, _agent = _record_run()
+    cassette = Cassette.from_run(run)
+
+    # a second lens with *changed* agent code, same recorded side effects
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens2 = AgentLens(exporter=FileExporter(path))
+    seen = {}
+
+    @lens2.tool("search")
+    def search(q):
+        raise AssertionError("the network must not be touched during replay")
+
+    @lens2.span("answer", kind=SpanKind.LLM)
+    def answer(docs):
+        raise AssertionError("the model must not be called during replay")
+
+    @lens2.trace("qa_agent")
+    def agent_v2(q):
+        docs = search(q)
+        seen["docs"] = docs           # today's code, yesterday's data
+        return answer(docs).upper()   # the change under test
+
+    with replay(cassette):
+        result = agent_v2("paris")
+
+    assert seen["docs"] == {"hits": ["doc about paris"], "count": 1}
+    assert result == "ANSWER FROM 1 DOC(S)", result
+    print("test_replay_runs_agent_logic_for_real ok")
+
+
+def test_replay_reproduces_recorded_failures():
+    from agentlens import Cassette, ReplayedError, replay
+
+    run, calls, _lens, agent = _record_run(fail_search=True)
+    assert run["status"] == "error"
+
+    cassette = Cassette.from_run(run)
+    with replay(cassette):
+        raised = False
+        try:
+            agent("paris")
+        except ReplayedError as e:
+            raised = True
+            assert "503" in str(e)
+    assert raised, "a recorded failure should fail the same way on replay"
+    assert calls["search"] == 1, "the failing call must not be retried against the network"
+    print("test_replay_reproduces_recorded_failures ok")
+
+
+def test_replay_strict_mode_catches_new_calls():
+    from agentlens import Cassette, ReplayMiss, replay, SpanKind
+
+    run, _calls, _lens, _agent = _record_run()
+    cassette = Cassette.from_run(run)
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens2 = AgentLens(exporter=FileExporter(path))
+
+    @lens2.tool("search")
+    def search(q):
+        return {"hits": [], "count": 0}
+
+    @lens2.tool("translate")           # a call the recording never saw
+    def translate(text):
+        return "live network call"
+
+    @lens2.trace("qa_agent")
+    def agent_v2(q):
+        return translate(search(q))
+
+    # strict: an unrecorded call is an error, not a silent trip to the network
+    with replay(cassette, strict=True) as session:
+        missed = False
+        try:
+            agent_v2("paris")
+        except ReplayMiss as e:
+            missed = True
+            assert "translate" in str(e)
+        assert missed
+        assert session.report()["misses"] == ["translate"]
+
+    # lenient: falls through to the real function
+    with replay(cassette, strict=False):
+        assert agent_v2("paris") == "live network call"
+    print("test_replay_strict_mode_catches_new_calls ok")
+
+
+def test_replay_matches_calls_in_order():
+    from agentlens import Cassette, replay
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path), record_outputs=True)
+    n = {"i": 0}
+
+    @lens.tool("search")
+    def search(q):
+        n["i"] += 1
+        return f"result {n['i']}"
+
+    @lens.trace("agent")
+    def agent():
+        return [search("a"), search("b"), search("c")]
+
+    assert agent() == ["result 1", "result 2", "result 3"]
+    cassette = Cassette.from_run(json.loads(open(path).read().strip()))
+
+    with replay(cassette):
+        # same call, three times — order decides which recording answers
+        assert agent() == ["result 1", "result 2", "result 3"]
+    assert n["i"] == 3, "no extra live calls"
+    print("test_replay_matches_calls_in_order ok")
+
+
+def test_replay_reports_unused_recordings():
+    from agentlens import Cassette, replay
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path), record_outputs=True)
+
+    @lens.tool("search")
+    def search(q):
+        return q
+
+    @lens.trace("agent")
+    def agent(times):
+        return [search(str(i)) for i in range(times)]
+
+    agent(3)
+    cassette = Cassette.from_run(json.loads(open(path).read().strip()))
+
+    lens2 = AgentLens(exporter=FileExporter(os.path.join(tempfile.mkdtemp(), "r.jsonl")))
+
+    @lens2.tool("search")
+    def search2(q):
+        return q
+
+    @lens2.trace("agent")
+    def agent_v2():
+        return search2("0")   # today's code makes fewer calls
+
+    with replay(cassette) as session:
+        agent_v2()
+    report = session.report()
+    assert report["unused"] == {"search": 2}, report
+    assert report["diverged"] is True, "fewer calls than recorded is a divergence"
+    print("test_replay_reports_unused_recordings ok")
+
+
+def test_cassette_round_trips_through_disk():
+    from agentlens import Cassette, replay
+
+    run, _calls, _lens, agent = _record_run()
+    path = os.path.join(tempfile.mkdtemp(), "fixtures", "run.json")
+    Cassette.from_run(run).save(path)
+
+    loaded = Cassette.load(path)
+    assert loaded.run_id == run["run_id"]
+    assert loaded.span_count == 2
+    with replay(loaded):
+        assert agent("paris") == "answer from 1 doc(s)"
+    print("test_cassette_round_trips_through_disk ok")
+
+
+def test_cassette_without_recording_is_marked_truncated():
+    from agentlens import Cassette
+
+    run, _calls, _lens, _agent = _record_run(record_outputs=False)
+    cassette = Cassette.from_run(run)
+    # previews are strings, not the original objects — flagged so a caller
+    # knows why feeding them back may not behave
+    assert all(c.truncated for items in cassette.calls.values() for c in items)
+    print("test_cassette_without_recording_is_marked_truncated ok")
+
+
+def test_divergence_pinpoints_the_first_difference():
+    from agentlens import divergence
+
+    original = {"status": "error", "spans": [
+        {"name": "agent", "kind": "agent", "started_at": 1},
+        {"name": "search", "kind": "tool", "started_at": 2},
+        {"name": "answer", "kind": "llm", "started_at": 3},
+    ]}
+    changed = {"status": "success", "spans": [
+        {"name": "agent", "kind": "agent", "started_at": 1},
+        {"name": "search", "kind": "tool", "started_at": 2},
+        {"name": "validate", "kind": "custom", "started_at": 2.5},
+        {"name": "answer", "kind": "llm", "started_at": 3},
+    ]}
+
+    d = divergence(original, changed)
+    assert d["identical"] is False
+    assert d["first_divergence"]["index"] == 2
+    assert d["first_divergence"]["replayed"] == "validate"
+    assert "error → success" in d["summary"]
+
+    assert divergence(original, original)["identical"] is True
+    print("test_divergence_pinpoints_the_first_difference ok")
+
+
+def test_replay_rejects_changed_inputs():
+    """
+    Serving a recorded output for arguments that were never sent is a lie:
+    nobody knows what that API or model would have returned.
+    """
+    from agentlens import Cassette, InputMismatch, replay, SpanKind
+
+    run, _calls, _lens, _agent = _record_run()
+    cassette = Cassette.from_run(run)
+
+    lens2 = AgentLens(exporter=FileExporter(os.path.join(tempfile.mkdtemp(), "r.jsonl")))
+
+    @lens2.tool("search")
+    def search(q):
+        raise AssertionError("network must not be reached")
+
+    @lens2.span("answer", kind=SpanKind.LLM)
+    def answer(docs):
+        raise AssertionError("model must not be called")
+
+    @lens2.trace("qa_agent")
+    def agent_v2(q):
+        docs = search(q)
+        # today's code sends the model something different than was recorded
+        return answer({"hits": docs["hits"], "count": docs["count"], "rerank": True})
+
+    with replay(cassette, strict=True) as session:
+        caught = False
+        try:
+            agent_v2("paris")
+        except InputMismatch as e:
+            caught = True
+            assert "different arguments" in str(e)
+            assert "Re-record" in str(e)
+        assert caught, "changed inputs must not silently reuse a recording"
+        assert session.report()["input_mismatches"][0]["name"] == "answer"
+
+    # opting out is possible, but it's a deliberate choice
+    cassette2 = Cassette.from_run(run)
+    with replay(cassette2, match_inputs=False) as session:
+        agent_v2("paris")
+        assert session.report()["hits"] == 2
+    print("test_replay_rejects_changed_inputs ok")
+
+
+def test_redaction_detects_common_secrets():
+    from agentlens import Redactor
+
+    r = Redactor()
+    cases = {
+        "email me at jane.doe@acme.com": ("acme.com", "jane.doe@"),
+        "call (555) 123-4567 today": ("phone", "123-4567"),
+        "ssn 123-45-6789 on file": ("ssn:redacted", "123-45-6789"),
+        "key sk-proj-abcdefghij1234567890": ("openai_key:redacted", "sk-proj-abcdefghij"),
+        "AKIAIOSFODNN7EXAMPLE": ("aws_key:redacted", "AKIAIOSFODNN7EXAMPLE"),
+        "token ghp_abcdefghijklmnop1234": ("github_token:redacted", "ghp_abcdef"),
+        "host 10.0.0.5 replied": ("ipv4:", "10.0.0.5"),
+    }
+    for text, (expect_present, expect_absent) in cases.items():
+        out = r.redact_text(text)
+        assert expect_present in out, f"{text!r} → {out!r}"
+        assert expect_absent not in out, f"leaked in {out!r}"
+    print("test_redaction_detects_common_secrets ok")
+
+
+def test_redaction_leaves_ordinary_text_alone():
+    from agentlens import Redactor
+
+    r = Redactor()
+    safe = [
+        "The meeting is at 3pm on 2026-08-22 in room 4021.",
+        "Order 12345678901234567 shipped via route 66.",
+        "Version 1.2.3.4 of the parser handles 99.9% of cases.",
+        "def summarize(docs: list[str]) -> str: return docs[0]",
+        "Error: connection reset after 30000 ms",
+    ]
+    for text in safe:
+        assert r.redact_text(text) == text, f"false positive on {text!r}"
+    print("test_redaction_leaves_ordinary_text_alone ok")
+
+
+def test_credit_cards_need_luhn():
+    from agentlens import Redactor
+    from agentlens.redaction import luhn_valid
+
+    r = Redactor()
+    # a real number is caught
+    assert "4111" not in r.redact_text("card 4111 1111 1111 1111")
+    assert "••••1111" in r.redact_text("card 4111 1111 1111 1111")
+    # a long digit run that isn't a card is left alone
+    assert luhn_valid("4111111111111111") is True
+    assert luhn_valid("12345678901234567") is False
+    assert r.redact_text("invoice 12345678901234567") == "invoice 12345678901234567"
+    print("test_credit_cards_need_luhn ok")
+
+
+def test_redaction_policies_and_hash_stability():
+    from agentlens import Redactor
+
+    r = Redactor(policies={"email": "hash", "phone": "drop", "ipv4": "allow"})
+    out = r.redact_text("jane@acme.com / (555) 123-4567 / 10.0.0.5")
+    assert "[email:" in out and "acme.com" not in out
+    assert "[phone:redacted]" in out
+    assert "10.0.0.5" in out, "an allowed detector should not be redacted"
+
+    # the same value fingerprints identically, so a user can be correlated
+    # across runs without the value being stored
+    assert r.redact_text("jane@acme.com") == r.redact_text("jane@acme.com")
+    assert r.redact_text("jane@acme.com") != r.redact_text("bob@acme.com")
+
+    # a different secret produces different tokens
+    assert Redactor(policies={"email": "hash"}, hash_secret="a").redact_text("j@x.com") != \
+        Redactor(policies={"email": "hash"}, hash_secret="b").redact_text("j@x.com")
+    print("test_redaction_policies_and_hash_stability ok")
+
+
+def test_redaction_by_field_name():
+    from agentlens import Redactor
+
+    r = Redactor()
+    # a short random key looks like any other string; the field name is the
+    # only reliable signal
+    out = r.redact_value({"user": "amy", "api_key": "x7f2q", "nested": {"password": "hunter2"}})
+    assert out["user"] == "amy"
+    assert out["api_key"].startswith("[api_key:") and "x7f2q" not in str(out)
+    assert "hunter2" not in str(out)
+    print("test_redaction_by_field_name ok")
+
+
+def test_redaction_applies_to_exported_runs():
+    from agentlens import SpanKind
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path), redact=True)
+
+    @lens.tool("lookup_customer")
+    def lookup(email):
+        return {"email": email, "phone": "(555) 123-4567", "api_key": "secret123"}
+
+    @lens.trace("support_agent")
+    def agent(email):
+        return lookup(email)
+
+    agent("jane.doe@acme.com")
+    raw = open(path).read()
+
+    assert "jane.doe@acme.com" not in raw, "raw email reached the exporter"
+    assert "(555) 123-4567" not in raw
+    assert "secret123" not in raw
+    assert "acme.com" in raw, "masking should keep the domain for debugging"
+    print("test_redaction_applies_to_exported_runs ok")
+
+
+def test_redaction_covers_streaming_events():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    events = []
+
+    class Recorder:
+        def export(self, run):
+            pass
+
+        def export_event(self, event):
+            events.append(json.dumps(event, default=str))
+
+    lens = AgentLens(exporter=Recorder(), redact=True)
+
+    @lens.tool("lookup")
+    def lookup(email):
+        return f"found {email}"
+
+    @lens.trace("agent")
+    def agent(email):
+        return lookup(email)
+
+    agent("jane.doe@acme.com")
+    blob = "\n".join(events)
+    # streaming would otherwise bypass everything the export path protects
+    assert "jane.doe@acme.com" not in blob, "streaming leaked what export redacts"
+    assert len(events) > 0
+    print("test_redaction_covers_streaming_events ok")
+
+
+def test_capture_content_false_drops_everything():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path), capture_content=False)
+
+    @lens.tool("lookup")
+    def lookup(secret_text):
+        return f"result for {secret_text}"
+
+    @lens.trace("agent")
+    def agent(text):
+        return lookup(text)
+
+    agent("classified operation bluebird")
+    run = json.loads(open(path).read().strip())
+
+    assert "bluebird" not in open(path).read()
+    # structure survives even though content is gone: you still get the DAG,
+    # timings, and status
+    assert len(run["spans"]) == 2
+    assert run["spans"][1]["name"] == "lookup"
+    assert run["status"] == "success"
+    print("test_capture_content_false_drops_everything ok")
+
+
+def test_redaction_failure_drops_rather_than_leaks():
+    from agentlens import Redactor
+
+    class BrokenRedactor(Redactor):
+        def redact_text(self, text):
+            raise RuntimeError("detector exploded")
+
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path), redact=BrokenRedactor())
+
+    @lens.tool("lookup")
+    def lookup(email):
+        return f"found {email}"
+
+    @lens.trace("agent")
+    def agent(email):
+        return lookup(email)
+
+    # the agent keeps working …
+    assert agent("jane.doe@acme.com") == "found jane.doe@acme.com"
+    raw = open(path).read()
+    # … and a broken redactor fails closed rather than emitting raw data
+    assert "jane.doe@acme.com" not in raw, "redaction failure leaked PII"
+    assert "redaction failed" in raw
+    print("test_redaction_failure_drops_rather_than_leaks ok")
+
+
+def test_redaction_scan_reports_without_changing():
+    from agentlens import Redactor
+
+    r = Redactor()
+    found = r.scan("jane@acme.com and bob@acme.com called (555) 123-4567")
+    assert found["email"] == 2
+    assert found["phone"] == 1
+    assert "ssn" not in found
+    print("test_redaction_scan_reports_without_changing ok")
+
+
+def test_custom_patterns_take_priority():
+    from agentlens import Redactor
+
+    r = Redactor(extra_patterns={"employee_id": r"\bEMP-\d{6}\b"}, policies={"employee_id": "hash"})
+    out = r.redact_text("ticket from EMP-004217 about billing")
+    assert "EMP-004217" not in out
+    assert "[employee_id:" in out
+    print("test_custom_patterns_take_priority ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
@@ -528,4 +1036,25 @@ if __name__ == "__main__":
     test_ci_threshold_parsing()
     test_ci_unreachable_server_is_an_error_not_a_pass()
     test_ci_parser_defaults()
+    test_replay_serves_recorded_outputs()
+    test_replay_runs_agent_logic_for_real()
+    test_replay_reproduces_recorded_failures()
+    test_replay_strict_mode_catches_new_calls()
+    test_replay_matches_calls_in_order()
+    test_replay_reports_unused_recordings()
+    test_cassette_round_trips_through_disk()
+    test_cassette_without_recording_is_marked_truncated()
+    test_replay_rejects_changed_inputs()
+    test_divergence_pinpoints_the_first_difference()
+    test_redaction_detects_common_secrets()
+    test_redaction_leaves_ordinary_text_alone()
+    test_credit_cards_need_luhn()
+    test_redaction_policies_and_hash_stability()
+    test_redaction_by_field_name()
+    test_redaction_applies_to_exported_runs()
+    test_redaction_covers_streaming_events()
+    test_capture_content_false_drops_everything()
+    test_redaction_failure_drops_rather_than_leaks()
+    test_redaction_scan_reports_without_changing()
+    test_custom_patterns_take_priority()
     print("all SDK tests passed")

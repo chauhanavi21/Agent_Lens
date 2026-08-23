@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import traceback
 from typing import Any, Callable, Optional
 
@@ -24,6 +25,15 @@ from . import context as ctx
 from .cost import estimate_cost_usd
 from .exporters import Exporter, HttpExporter, ConsoleExporter
 from .models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
+from .redaction import Redactor, build_redactor
+from .replay import (
+    REPLAY_ERROR_KEY,
+    REPLAY_OUTPUT_KEY,
+    InputMismatch,
+    ReplayedError,
+    ReplayMiss,
+    current_session,
+)
 from .streaming import run_end_event, run_start_event, span_event
 
 
@@ -46,6 +56,9 @@ class AgentLens:
         exporter: Optional[Exporter] = None,
         cost_table: Optional[dict[str, tuple[float, float]]] = None,
         on_budget: str = "raise",  # "raise" | "pause" | "warn"
+        record_outputs: bool = False,
+        redact: Any = None,        # True | Redactor | {detector: policy}
+        capture_content: bool = True,
     ):
         if exporter is not None:
             self.exporter = exporter
@@ -54,9 +67,70 @@ class AgentLens:
         else:
             self.exporter = ConsoleExporter()
         self.cost_table = cost_table or {}
+        # `outputs` is a truncated preview — fine for a UI, useless for
+        # replay. Turning this on stores a full JSON copy so the run can be
+        # replayed later; it costs storage, so it's opt-in.
+        self.record_outputs = record_outputs
+        # Redaction runs here, in the SDK, rather than server-side: doing it
+        # at ingest would still mean raw values crossed the network and sat
+        # in an access log on the way.
+        self.redactor: Optional[Redactor] = build_redactor(redact)
+        # The blunt instrument. When content isn't needed at all, dropping it
+        # beats scrubbing it — no detector catches everything.
+        self.capture_content = capture_content
         if on_budget not in ("raise", "pause", "warn"):
             raise ValueError("on_budget must be 'raise', 'pause', or 'warn'")
         self.on_budget = on_budget
+
+    def _record_output(self, span: Span, result: Any, error: Optional[BaseException] = None) -> None:
+        """Stash a replayable copy of what this span returned or raised."""
+        if not self.record_outputs:
+            return
+        if error is not None:
+            span.attributes[REPLAY_ERROR_KEY] = f"{type(error).__name__}: {error}"
+            return
+        try:
+            json.dumps(result)
+            span.attributes[REPLAY_OUTPUT_KEY] = result
+        except (TypeError, ValueError):
+            # not serializable: record what we can rather than failing the run
+            span.attributes[REPLAY_OUTPUT_KEY] = _preview(result, 4000)
+
+    @staticmethod
+    def _replayed(span_name: str, kind: SpanKind, inputs: str = ""):
+        """
+        Return (True, value) when a replay session should answer this call
+        instead of the real function running.
+        """
+        session = current_session()
+        if session is None or not session.should_replay(kind.value):
+            return False, None
+        try:
+            call = session.resolve(span_name, inputs)
+        except ReplayMiss:
+            if session.strict:
+                raise
+            return False, None
+        if call.error:
+            raise ReplayedError(call.error)
+        return True, call.output
+
+    def _sanitize(self, run: AgentRun) -> AgentRun:
+        """Last stop before a run leaves the process."""
+        if not self.capture_content:
+            for span in run.spans:
+                span.inputs = span.outputs = ""
+                if span.llm is not None:
+                    span.llm.prompt_preview = span.llm.response_preview = ""
+        if self.redactor is not None:
+            self.redactor.redact_run(run)
+        return run
+
+    def _export(self, run: AgentRun) -> None:
+        try:
+            self.exporter.export(self._sanitize(run))
+        except Exception:
+            pass  # tracing must never take the agent down
 
     def _emit(self, event: dict) -> None:
         """Send a lifecycle event if the exporter wants them. Never raises:
@@ -65,6 +139,11 @@ class AgentLens:
         if emit is None:
             return
         try:
+            # streaming would otherwise bypass everything _sanitize does
+            if not self.capture_content and isinstance(event.get("span"), dict):
+                event["span"] = {**event["span"], "inputs": "", "outputs": ""}
+            if self.redactor is not None:
+                event = self.redactor.redact_value(event)
             emit(event)
         except Exception:
             pass
@@ -117,10 +196,7 @@ class AgentLens:
                 self._emit(run_end_event(run))
                 ctx.reset_span(span_token)
                 ctx.reset_run(run_token)
-                try:
-                    self.exporter.export(run)
-                except Exception:
-                    pass  # tracing must never take the agent down
+                self._export(run)
 
             if inspect.iscoroutinefunction(fn):
 
@@ -189,6 +265,7 @@ class AgentLens:
                 else:
                     tb = "".join(traceback.format_exception(error)).strip()
                     span.finish(SpanStatus.ERROR, error=tb)
+                    self._record_output(span, None, error)
                 run = ctx.current_run()
                 if run is not None:
                     self._emit(span_event(run, span, "span_end"))
@@ -206,8 +283,12 @@ class AgentLens:
                             return await fn(*args, **kwargs)
                         span.inputs = _preview({"args": args, "kwargs": kwargs})
                         try:
-                            result = await fn(*args, **kwargs)
+                            hit, recorded = self._replayed(span_name, kind, span.inputs)
+                            result = recorded if hit else await fn(*args, **kwargs)
+                            if hit:
+                                span.attributes["agentlens.replayed"] = True
                             span.outputs = _preview(result)
+                            self._record_output(span, result)
                             _close(span, token, None)
                             return result
                         except BudgetExceeded:
@@ -232,8 +313,12 @@ class AgentLens:
                         return fn(*args, **kwargs)
                     span.inputs = _preview({"args": args, "kwargs": kwargs})
                     try:
-                        result = fn(*args, **kwargs)
+                        hit, recorded = self._replayed(span_name, kind, span.inputs)
+                        result = recorded if hit else fn(*args, **kwargs)
+                        if hit:
+                            span.attributes["agentlens.replayed"] = True
                         span.outputs = _preview(result)
+                        self._record_output(span, result)
                         _close(span, token, None)
                         return result
                     except BudgetExceeded:

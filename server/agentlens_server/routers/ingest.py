@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..alerts import _describe, build_payload, dispatch, rule_matches
-from ..config import API_KEY
+from ..config import API_KEY, REDACT_ON_INGEST
 from ..db import SessionLocal, get_session
 from ..models import AlertEventRow, AlertRuleRow, RunRow
 from ..stitching import is_child_run
@@ -145,6 +145,14 @@ async def ingest_otlp(
 
     try:
         runs = convert_otlp(payload)
+        if REDACT_ON_INGEST:
+            from agentlens.redaction import default_redactor
+
+            redactor = default_redactor()
+            for run in runs:
+                run["spans"] = [redactor.redact_value(s) for s in run["spans"]]
+                if run.get("error"):
+                    run["error"] = redactor.redact_text(run["error"])
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Could not read OTLP payload: {e}")
     if not runs:

@@ -36,6 +36,8 @@ to inspect any node, diff two runs, and stop runaway costs before they happen.
 | **LLM-as-judge on the trace**    |     ✅     |    ✅     |    ❌     |
 | **CI gate on score regression**  |     ✅     |    ❌     |    ❌     |
 | **Python _and_ TypeScript SDKs** |     ✅     |    ✅     |    ✅     |
+| **Deterministic trace replay**   |     ✅     |    ❌     |    ❌     |
+| **PII redaction in the SDK**     |     ✅     |  server   |    ❌     |
 | Self-hostable                    |     ✅     |    ✅     |    ❌     |
 | Zero required deps (SDK)         |     ✅     |    ❌     |    ❌     |
 | Framework agnostic               |     ✅     |    ✅     |    ✅     |
@@ -99,6 +101,127 @@ one with retries and a failure) so you can explore the DAG and diff views.
   so a slow regression is visible before anyone files a bug
 - **Alerts** — build webhook rules from the UI and see every rule that has
   fired, including failed deliveries
+
+## PII redaction
+
+Agent traces are unusually dangerous to store. A prompt is whatever the
+user typed; tool arguments are whatever the agent decided to send. A trace
+backend quietly accumulates support-ticket text, uploaded documents, and
+API credentials nobody meant to log.
+
+```python
+lens = AgentLens(endpoint="…", redact=True)
+```
+
+Redaction runs **in the SDK, before export** — scrubbing at ingest would
+still mean the raw values crossed the network and sat in an access log on
+the way. (`AGENTLENS_REDACT_ON_INGEST=true` adds a server-side pass for
+OTLP traffic from SDKs you don't control.)
+
+### Policies
+
+```python
+from agentlens import AgentLens, Redactor
+
+lens = AgentLens(endpoint="…", redact=Redactor(
+    policies={
+        "email": "hash",        # correlate a user across runs, store nothing
+        "phone": "mask",        # keep a recognizable shape
+        "credit_card": "drop",  # nothing survives
+        "ipv4": "allow",        # internal service IPs are useful
+    },
+    extra_patterns={"order_id": r"\bORD-\d{8}\b"},
+))
+```
+
+`hash` is the one that makes redacted traces still worth having: a
+deterministic HMAC means the same customer produces the same token every
+time, so you can group their runs and answer "did this user hit the bug
+twice?" without the value being recoverable.
+
+Detected out of the box: emails, phones, SSNs, credit cards, IBANs, IPv4,
+JWTs, OpenAI/Anthropic/AWS/GitHub keys, and `Bearer` tokens — plus
+field-name rules (`password`, `api_key`, `authorization`, …) that catch
+short random secrets no pattern could.
+
+### Accuracy
+
+False positives are their own failure — a trace full of `[redacted]` is
+useless. So detection is validated, not just matched:
+
+- **Credit cards must pass Luhn.** `4111 1111 1111 1111` is redacted;
+  order number `12345678901234567` is left alone.
+- **IPv4 checks its context.** `1.2.3.4` after the word "version" is a
+  version string, not an address.
+- Ordinary text — dates, room numbers, semvers, error codes, code
+  snippets — passes through untouched. There's a test asserting exactly
+  that.
+
+### Failing closed
+
+- A redactor that throws **drops the field** rather than emitting raw data.
+  The agent keeps running; the trace loses one value.
+- Streaming events go through the same pass, or live view would bypass
+  everything export protects.
+- MCP server spans use the same path, so a tool server can't leak what the
+  agent process redacts.
+- `capture_content=False` drops inputs and outputs entirely — when content
+  isn't needed, dropping beats scrubbing, since no detector catches
+  everything. The DAG, timings, and status all survive.
+- `redactor.scan(text)` reports what *would* be caught, for a dry run
+  before you turn it on.
+
+## Trace replay
+
+A production failure is usually not reproducible: the search API returns
+something else now, the rate limit cleared, the model is nondeterministic.
+Replay pins the *outside world* to what it actually returned, then lets
+your code run for real against it.
+
+```python
+from agentlens import Cassette, replay
+
+def test_bug_471():
+    cassette = Cassette.load("fixtures/bug-471.json")
+    with replay(cassette):
+        result = qa_agent("capital of France")
+    assert "no source" in result
+```
+
+Pull a cassette straight from the server:
+
+```bash
+curl localhost:7430/api/runs/<run_id>/cassette > fixtures/bug-471.json
+```
+
+### What gets replayed, and what doesn't
+
+Tool, LLM, retrieval, and MCP spans are served from the recording. Agent,
+chain, and custom spans **execute normally**. That split is the whole
+design — replaying the reasoning too would just be playing back a
+transcript, and what you want is today's code meeting yesterday's inputs.
+
+### Guardrails
+
+- **Changed inputs are an error, not a silent reuse.** If your fix alters
+  what a step sends, replay raises `InputMismatch` rather than serving a
+  recording nobody knows applies to the new arguments. Opt out with
+  `match_inputs=False` if you mean it.
+- **Strict by default.** An unrecorded call raises `ReplayMiss` instead of
+  quietly reaching the network — otherwise a deterministic regression test
+  turns flaky again the moment someone adds a call.
+- **Recorded failures replay as failures**, so the bug reproduces before
+  you prove the fix.
+- **Unused recordings are reported.** Making fewer calls than the original
+  is a divergence worth seeing.
+- **Replayed spans are labelled** in the DAG, so nobody mistakes a replay
+  for real traffic.
+- `divergence(original, replayed)` names the first step where the two runs
+  parted ways.
+
+Recording full outputs is opt-in (`AgentLens(record_outputs=True)`) since it
+costs storage; without it a cassette falls back to truncated previews and
+flags itself `truncated`.
 
 ## TypeScript SDK
 
@@ -449,6 +572,8 @@ trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 | ------------------- | -------------------------------------------------------------- | ------------------------------------ |
 | `DATABASE_URL`      | `postgresql+asyncpg://agentlens:agentlens@postgres:5432/agentlens` | Postgres connection (SQLite works for dev) |
 | `AGENTLENS_API_KEY` | `""` (no auth)                                                 | Require this key on ingest requests  |
+| `AGENTLENS_HASH_SECRET` | `agentlens`                                                | Salt for redaction fingerprints      |
+| `AGENTLENS_REDACT_ON_INGEST` | `false`                                               | Scrub foreign OTLP traces server-side |
 | `CORS_ORIGINS`      | `http://localhost:5173`                                        | Comma-separated allowed origins      |
 | `VITE_API_URL`      | `""` (demo mode)                                               | UI → server URL                      |
 

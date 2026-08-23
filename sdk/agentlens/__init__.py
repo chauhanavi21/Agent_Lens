@@ -18,6 +18,8 @@ from .mcp import (
     trace_mcp_session,
 )
 from .models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus
+from .redaction import Redactor, default_redactor
+from .replay import Cassette, InputMismatch, ReplayedError, ReplayMiss, divergence, replay
 from .tracer import AgentLens, BudgetExceeded, tool, trace
 
 __version__ = "0.2.0"
@@ -34,7 +36,15 @@ __all__ = [
     "SpanKind",
     "SpanStatus",
     "current_run",
+    "Cassette",
     "current_span",
+    "default_redactor",
+    "Redactor",
+    "divergence",
+    "InputMismatch",
+    "replay",
+    "ReplayedError",
+    "ReplayMiss",
     "extract_context",
     "format_traceparent",
     "inject_context",

@@ -9,7 +9,6 @@ from ..alerts import _describe, build_payload, dispatch, rule_matches
 from ..config import API_KEY, REDACT_ON_INGEST
 from ..db import SessionLocal, get_session
 from ..models import AlertEventRow, AlertRuleRow, RunRow
-from ..stitching import is_child_run
 from ..schemas import RunIn, ScoresIn
 
 router = APIRouter(tags=["ingest"])
@@ -30,9 +29,15 @@ async def evaluate_alerts(run: dict) -> list[dict]:
     """
     fired = []
     async with SessionLocal() as session:
-        rules = (await session.execute(
-            select(AlertRuleRow).where(AlertRuleRow.enabled == True)  # noqa: E712
-        )).scalars().all()
+        rules = (
+            (
+                await session.execute(
+                    select(AlertRuleRow).where(AlertRuleRow.enabled == True)  # noqa: E712
+                )
+            )
+            .scalars()
+            .all()
+        )
         for r in rules:
             rule = {"name": r.name, "field": r.field, "op": r.op, "value": r.value, "run_name": r.run_name}
             try:
@@ -42,9 +47,15 @@ async def evaluate_alerts(run: dict) -> list[dict]:
                 continue  # a malformed rule must not break ingest
             ok, err = dispatch(r.webhook_url, build_payload(rule, run))
             event = AlertEventRow(
-                id=uuid.uuid4().hex[:16], rule_id=r.id, rule_name=r.name,
-                run_id=run["run_id"], run_name=run["name"], reason=_describe(rule, run),
-                delivered=ok, delivery_error=err, fired_at=time.time(),
+                id=uuid.uuid4().hex[:16],
+                rule_id=r.id,
+                rule_name=r.name,
+                run_id=run["run_id"],
+                run_name=run["name"],
+                reason=_describe(rule, run),
+                delivered=ok,
+                delivery_error=err,
+                fired_at=time.time(),
             )
             session.add(event)
             fired.append({"rule": r.name, "delivered": ok})
@@ -62,7 +73,7 @@ async def ingest_run(
     _check_auth(authorization)
     row = await session.get(RunRow, run.run_id)
     spans = [s.model_dump() for s in run.spans]
-    payload = dict(
+    payload = dict(  # noqa: C408 - keyword form mirrors the column names
         trace_id=run.trace_id or run.run_id,
         is_remote=any(s.get("remote_parent_id") for s in spans),
         name=run.name,
@@ -118,9 +129,14 @@ async def ingest_scores(
     await session.commit()
 
     run = {
-        "run_id": row.run_id, "name": row.name, "status": row.status,
-        "total_cost_usd": row.total_cost_usd, "total_tokens": row.total_tokens,
-        "duration_ms": row.duration_ms, "spans": row.spans or [], "scores": row.scores,
+        "run_id": row.run_id,
+        "name": row.name,
+        "status": row.status,
+        "total_cost_usd": row.total_cost_usd,
+        "total_tokens": row.total_tokens,
+        "duration_ms": row.duration_ms,
+        "spans": row.spans or [],
+        "scores": row.scores,
     }
     background.add_task(evaluate_alerts, run)
     return {"run_id": row.run_id, "scores": len(row.scores)}
@@ -154,19 +170,26 @@ async def ingest_otlp(
                 if run.get("error"):
                     run["error"] = redactor.redact_text(run["error"])
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Could not read OTLP payload: {e}")
+        raise HTTPException(status_code=422, detail=f"Could not read OTLP payload: {e}") from e
     if not runs:
         return {"accepted": 0, "runs": []}
 
     accepted = []
     for run in runs:
         existing = await session.get(RunRow, run["run_id"])
-        fields = dict(
-            name=run["name"], status=run["status"], tags=run["tags"],
-            started_at=run["started_at"], ended_at=run["ended_at"],
-            duration_ms=run["duration_ms"], total_tokens=run["total_tokens"],
-            total_cost_usd=run["total_cost_usd"], error=run["error"],
-            meta=run["metadata"], scores=run["scores"], spans=run["spans"],
+        fields = dict(  # noqa: C408 - keyword form mirrors the column names
+            name=run["name"],
+            status=run["status"],
+            tags=run["tags"],
+            started_at=run["started_at"],
+            ended_at=run["ended_at"],
+            duration_ms=run["duration_ms"],
+            total_tokens=run["total_tokens"],
+            total_cost_usd=run["total_cost_usd"],
+            error=run["error"],
+            meta=run["metadata"],
+            scores=run["scores"],
+            spans=run["spans"],
         )
         if existing is None:
             session.add(RunRow(run_id=run["run_id"], **fields))

@@ -38,6 +38,7 @@ def score_field(run: dict, name: str) -> Optional[float]:
             return float(s["value"])
     return None
 
+
 OPS = {
     "gt": lambda a, b: a > b,
     "gte": lambda a, b: a >= b,
@@ -65,7 +66,7 @@ def validate_rule(field: str, op: str, value: Any) -> None:
         try:
             float(value)
         except (TypeError, ValueError):
-            raise RuleError(f"Operator '{op}' needs a numeric value, got '{value}'.")
+            raise RuleError(f"Operator '{op}' needs a numeric value, got '{value}'.") from None
 
 
 def rule_matches(rule: dict, run: dict) -> bool:

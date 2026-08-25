@@ -15,8 +15,14 @@ router = APIRouter(tags=["alerts"])
 
 def _rule_out(r: AlertRuleRow) -> AlertRuleOut:
     return AlertRuleOut(
-        id=r.id, name=r.name, field=r.field, op=r.op, value=r.value,
-        webhook_url=r.webhook_url, run_name=r.run_name, enabled=r.enabled,
+        id=r.id,
+        name=r.name,
+        field=r.field,
+        op=r.op,
+        value=r.value,
+        webhook_url=r.webhook_url,
+        run_name=r.run_name,
+        enabled=r.enabled,
         created_at=r.created_at,
     )
 
@@ -29,7 +35,9 @@ async def alert_fields():
 
 @router.get("/alerts/rules", response_model=list[AlertRuleOut])
 async def list_rules(session: AsyncSession = Depends(get_session)):
-    rows = (await session.execute(select(AlertRuleRow).order_by(desc(AlertRuleRow.created_at)))).scalars().all()
+    rows = (
+        (await session.execute(select(AlertRuleRow).order_by(desc(AlertRuleRow.created_at)))).scalars().all()
+    )
     return [_rule_out(r) for r in rows]
 
 
@@ -38,11 +46,17 @@ async def create_rule(rule: AlertRuleIn, session: AsyncSession = Depends(get_ses
     try:
         validate_rule(rule.field, rule.op, rule.value)
     except RuleError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     row = AlertRuleRow(
-        id=uuid.uuid4().hex[:16], name=rule.name, run_name=rule.run_name,
-        field=rule.field, op=rule.op, value=str(rule.value),
-        webhook_url=rule.webhook_url, enabled=rule.enabled, created_at=time.time(),
+        id=uuid.uuid4().hex[:16],
+        name=rule.name,
+        run_name=rule.run_name,
+        field=rule.field,
+        op=rule.op,
+        value=str(rule.value),
+        webhook_url=rule.webhook_url,
+        enabled=rule.enabled,
+        created_at=time.time(),
     )
     session.add(row)
     await session.commit()
@@ -57,7 +71,7 @@ async def update_rule(rule_id: str, rule: AlertRuleIn, session: AsyncSession = D
     try:
         validate_rule(rule.field, rule.op, rule.value)
     except RuleError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     row.name, row.field, row.op = rule.name, rule.field, rule.op
     row.value, row.webhook_url = str(rule.value), rule.webhook_url
     row.run_name, row.enabled = rule.run_name, rule.enabled
@@ -81,8 +95,13 @@ async def test_rule(rule_id: str, session: AsyncSession = Depends(get_session)):
     if row is None:
         raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found.")
     sample = {
-        "run_id": "test-run", "name": row.run_name or "sample_agent", "status": "error",
-        "total_cost_usd": 0.42, "total_tokens": 4200, "duration_ms": 3100, "spans": [],
+        "run_id": "test-run",
+        "name": row.run_name or "sample_agent",
+        "status": "error",
+        "total_cost_usd": 0.42,
+        "total_tokens": 4200,
+        "duration_ms": 3100,
+        "spans": [],
     }
     rule = {"name": row.name, "field": row.field, "op": row.op, "value": row.value}
     ok, err = dispatch(row.webhook_url, build_payload(rule, sample))
@@ -101,9 +120,15 @@ async def list_events(
     rows = (await session.execute(stmt)).scalars().all()
     return [
         AlertEventOut(
-            id=r.id, rule_id=r.rule_id, rule_name=r.rule_name, run_id=r.run_id,
-            run_name=r.run_name, reason=r.reason, delivered=r.delivered,
-            delivery_error=r.delivery_error, fired_at=r.fired_at,
+            id=r.id,
+            rule_id=r.rule_id,
+            rule_name=r.rule_name,
+            run_id=r.run_id,
+            run_name=r.run_name,
+            reason=r.reason,
+            delivered=r.delivered,
+            delivery_error=r.delivery_error,
+            fired_at=r.fired_at,
         )
         for r in rows
     ]

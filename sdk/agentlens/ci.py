@@ -43,7 +43,7 @@ def _parse_thresholds(pairs: list[str]) -> dict[str, float]:
         try:
             out[name.strip()] = float(value)
         except ValueError:
-            raise ValueError(f"Bad --threshold '{pair}': '{value}' is not a number.")
+            raise ValueError(f"Bad --threshold '{pair}': '{value}' is not a number.") from None
     return out
 
 
@@ -65,14 +65,18 @@ def _print_table(result: dict[str, Any]) -> None:
     print(f"\n  {'metric'.ljust(width)}  branch  baseline   delta  result")
     print(f"  {'-' * width}  ------  --------  ------  ------")
     for c in rows:
+
         def num(v, signed=False):
             if v is None:
                 return "    —"
             return f"{v:+.3f}" if signed else f"{v:.3f}"
+
         mark = "pass" if c["status"] == "pass" else "FAIL"
-        print(f"  {str(c['metric']).ljust(width)}   {num(c.get('candidate'))}"
-              f"     {num(c.get('baseline'))}  {num(c.get('delta'), True)}  {mark}"
-              + (f"  ({c['detail']})" if c.get("detail") else ""))
+        print(
+            f"  {str(c['metric']).ljust(width)}   {num(c.get('candidate'))}"
+            f"     {num(c.get('baseline'))}  {num(c.get('delta'), True)}  {mark}"
+            + (f"  ({c['detail']})" if c.get("detail") else "")
+        )
     print()
 
 
@@ -149,10 +153,16 @@ def build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("gate", help="Fail the build if eval scores regress.")
     g.add_argument("--candidate-tag", required=True, help="Tag on this branch's runs, e.g. pr-123")
     g.add_argument("--baseline-tag", default=None, help="Tag to compare against, e.g. main")
-    g.add_argument("--threshold", action="append", default=[], metavar="METRIC=VALUE",
-                   help="Absolute floor for a metric. Repeatable.")
-    g.add_argument("--max-regression", type=float, default=0.05,
-                   help="Largest allowed drop vs baseline (default: 0.05)")
+    g.add_argument(
+        "--threshold",
+        action="append",
+        default=[],
+        metavar="METRIC=VALUE",
+        help="Absolute floor for a metric. Repeatable.",
+    )
+    g.add_argument(
+        "--max-regression", type=float, default=0.05, help="Largest allowed drop vs baseline (default: 0.05)"
+    )
     g.add_argument("--min-runs", type=int, default=1)
     g.add_argument("--allow-error-runs", action="store_true", help="Don't fail just because a run errored.")
     g.add_argument("--warn-only", action="store_true", help="Report failures but always exit 0.")

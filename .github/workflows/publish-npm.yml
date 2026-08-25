@@ -1,0 +1,63 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, verify, publish
+    runs-on: ubuntu-latest
+    permissions:
+      # npm provenance: the published package is cryptographically linked to
+      # this workflow and commit, so consumers can verify where it came from.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+
+      - name: Confirm the tag matches package.json
+        if: github.event_name == 'release'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          packaged=$(node -p "require('./sdk-ts/package.json').version")
+          if [ "$tag" != "$packaged" ]; then
+            echo "tag $tag does not match sdk-ts/package.json version $packaged"
+            exit 1
+          fi
+
+      - name: Install and test
+        working-directory: sdk-ts
+        run: |
+          npm install
+          npm test
+
+      - name: Verify the tarball contains the build output
+        working-directory: sdk-ts
+        run: |
+          npm pack --dry-run --json > files.json
+          node -e "
+            const files = require('./files.json')[0].files.map(f => f.path);
+            const needed = ['dist/src/index.js', 'dist/src/index.d.ts'];
+            const missing = needed.filter(n => !files.includes(n));
+            if (missing.length) {
+              console.error('package is missing:', missing);
+              process.exit(1);
+            }
+            console.log('tarball contains the compiled output');
+          "
+
+      - name: Publish
+        if: github.event_name == 'release'
+        working-directory: sdk-ts
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

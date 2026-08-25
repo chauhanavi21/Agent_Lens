@@ -1,0 +1,114 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and check without uploading
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Confirm the tag matches the packaged version
+        if: github.event_name == 'release'
+        run: |
+          # A release tagged v0.3.0 that ships 0.2.0 is the kind of mistake
+          # you only notice after it's on PyPI and immutable.
+          tag="${GITHUB_REF_NAME#v}"
+          packaged=$(grep -m1 '^version' sdk/pyproject.toml | cut -d'"' -f2)
+          if [ "$tag" != "$packaged" ]; then
+            echo "tag $tag does not match sdk/pyproject.toml version $packaged"
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          pip install build twine
+          cd sdk && python -m build
+
+      - name: Check metadata
+        run: twine check sdk/dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: sdk/dist/
+
+  smoke-test:
+    name: Install the built wheel and use it
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Install from the wheel, not the source tree
+        run: |
+          pip install dist/*.whl
+          python - <<'PY'
+          # Catches the classic packaging bug: a module that works from the
+          # repo but was never listed in the wheel.
+          from agentlens import AgentLens, score
+          import agentlens.integrations.langgraph  # noqa: F401
+          import agentlens.replay, agentlens.redaction, agentlens.otel, agentlens.mcp  # noqa: F401
+
+          runs = []
+          class Capture:
+              def export(self, run): runs.append(run.to_dict())
+
+          lens = AgentLens(exporter=Capture())
+
+          @lens.tool("search")
+          def search(q): return ["d"]
+
+          @lens.trace("packaged_agent")
+          def agent(q):
+              search(q)
+              score("ok", 1.0, threshold=0.5)
+              return "done"
+
+          assert agent("q") == "done"
+          assert len(runs[0]["spans"]) == 2
+          print("wheel is importable and functional")
+          PY
+
+  publish:
+    name: Upload to PyPI
+    needs: smoke-test
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agentlens
+    permissions:
+      # Trusted publishing: PyPI verifies this workflow's OIDC identity, so
+      # there's no long-lived API token to leak or rotate.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

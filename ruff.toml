@@ -1,0 +1,39 @@
+# Lint config shared by the SDK, server, and scripts.
+line-length = 110
+target-version = "py39"          # the SDK's floor; the matrix enforces it
+
+exclude = ["ui", "sdk-ts", "**/dist", "**/node_modules", "**/__pycache__"]
+
+[lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "B008",    # FastAPI's Depends() in defaults is the documented pattern
+    "UP006",   # keep typing.Dict-style hints valid on 3.9
+    "UP035",
+    # `X | None` is only safe in annotations on 3.9 because of
+    # `from __future__ import annotations`. It still breaks anything that
+    # resolves hints at runtime, so Optional[...] stays until the floor moves.
+    "UP007",
+    "UP045",
+    "SIM105",  # contextlib.suppress hides which exception we're tolerating
+]
+
+[lint.per-file-ignores]
+# Tests intentionally define odd shapes and unused fakes.
+"**/test_*.py" = ["B011", "F841", "E731", "SIM115"]
+"**/tests/*.py" = ["B011", "F841", "E731", "SIM115"]
+"scripts/*.py" = ["SIM115"]
+# Examples are written for readability over lint purity.
+"examples/*.py" = ["F401", "E402", "B018"]
+
+[format]
+quote-style = "double"

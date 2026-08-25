@@ -61,15 +61,28 @@ def _score_delta(run_a: dict, run_b: dict) -> list[dict[str, Any]]:
         a, b = sa.get(name), sb.get(name)
         if a and b:
             if round(float(a["value"]), 6) != round(float(b["value"]), 6):
-                out.append({"name": name, "a": a["value"], "b": b["value"],
-                            "delta": round(float(b["value"]) - float(a["value"]), 4),
-                            "passed_a": a.get("passed"), "passed_b": b.get("passed")})
+                out.append(
+                    {
+                        "name": name,
+                        "a": a["value"],
+                        "b": b["value"],
+                        "delta": round(float(b["value"]) - float(a["value"]), 4),
+                        "passed_a": a.get("passed"),
+                        "passed_b": b.get("passed"),
+                    }
+                )
         else:
-            present = b or a
-            out.append({"name": name, "a": a["value"] if a else None,
-                        "b": b["value"] if b else None, "delta": None,
-                        "passed_a": a.get("passed") if a else None,
-                        "passed_b": b.get("passed") if b else None})
+            # present in only one run: a metric that appeared or disappeared
+            out.append(
+                {
+                    "name": name,
+                    "a": a["value"] if a else None,
+                    "b": b["value"] if b else None,
+                    "delta": None,
+                    "passed_a": a.get("passed") if a else None,
+                    "passed_b": b.get("passed") if b else None,
+                }
+            )
     return out
 
 
@@ -83,21 +96,35 @@ def diff_runs(run_a: dict, run_b: dict) -> dict[str, Any]:
     for key in sorted(keys_a & keys_b):
         delta = _span_delta(pa[key], pb[key])
         if delta:
-            changed.append({"path": key, "span_a": pa[key]["span_id"], "span_b": pb[key]["span_id"], "changes": delta})
+            changed.append(
+                {"path": key, "span_a": pa[key]["span_id"], "span_b": pb[key]["span_id"], "changes": delta}
+            )
 
     return {
-        "run_a": {"run_id": run_a["run_id"], "name": run_a["name"], "status": run_a["status"],
-                  "duration_ms": run_a.get("duration_ms"), "total_tokens": run_a.get("total_tokens", 0),
-                  "total_cost_usd": run_a.get("total_cost_usd", 0.0)},
-        "run_b": {"run_id": run_b["run_id"], "name": run_b["name"], "status": run_b["status"],
-                  "duration_ms": run_b.get("duration_ms"), "total_tokens": run_b.get("total_tokens", 0),
-                  "total_cost_usd": run_b.get("total_cost_usd", 0.0)},
+        "run_a": {
+            "run_id": run_a["run_id"],
+            "name": run_a["name"],
+            "status": run_a["status"],
+            "duration_ms": run_a.get("duration_ms"),
+            "total_tokens": run_a.get("total_tokens", 0),
+            "total_cost_usd": run_a.get("total_cost_usd", 0.0),
+        },
+        "run_b": {
+            "run_id": run_b["run_id"],
+            "name": run_b["name"],
+            "status": run_b["status"],
+            "duration_ms": run_b.get("duration_ms"),
+            "total_tokens": run_b.get("total_tokens", 0),
+            "total_cost_usd": run_b.get("total_cost_usd", 0.0),
+        },
         "added": [{"path": k, "span": pb[k]["span_id"], "status": pb[k]["status"]} for k in added],
         "removed": [{"path": k, "span": pa[k]["span_id"], "status": pa[k]["status"]} for k in removed],
         "changed": changed,
         "scores": _score_delta(run_a, run_b),
         "summary": {
-            "added": len(added), "removed": len(removed), "changed": len(changed),
+            "added": len(added),
+            "removed": len(removed),
+            "changed": len(changed),
             "verdict": _verdict(run_a, run_b, changed),
         },
     }

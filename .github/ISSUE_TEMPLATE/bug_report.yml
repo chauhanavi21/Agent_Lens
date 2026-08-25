@@ -1,0 +1,42 @@
+name: Bug report
+description: Something behaves differently than documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If a trace looks wrong, the most useful thing you can attach is the
+        run JSON (`GET /api/runs/<run_id>`) with anything sensitive removed —
+        `redactor.scan(text)` will tell you what it would catch.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "agentlens 0.2.0 / @agentlens/sdk 0.2.0"
+    validations: { required: true }
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Python SDK
+        - TypeScript SDK
+        - Server
+        - UI
+        - Framework integration
+        - CI gate / evals
+    validations: { required: true }
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations: { required: true }
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest reproduction you can manage
+      render: python

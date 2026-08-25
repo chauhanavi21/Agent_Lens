@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest something AgentLens should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you hitting?
+      description: The situation, not the solution — it often points somewhere different.
+    validations: { required: true }
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you had in mind
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before filing
+      options:
+        - label: I checked ARCHITECTURE.md, including the known limitations section

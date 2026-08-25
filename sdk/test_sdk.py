@@ -1014,6 +1014,360 @@ def test_custom_patterns_take_priority():
     print("test_custom_patterns_take_priority ok")
 
 
+# --------------------------------------------------------------------------- #
+# framework integrations
+#
+# Each is exercised against a fake that mirrors the framework's documented
+# interface. That keeps the suite dependency-free and, more usefully, pins
+# the exact shape each adapter relies on — so when a framework changes, the
+# failure names the assumption that broke.
+# --------------------------------------------------------------------------- #
+
+def test_openai_agents_processor_builds_a_run():
+    from agentlens.integrations.openai_agents import AgentLensTracingProcessor
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(json.loads(json.dumps(run.to_dict())))
+
+    lens = AgentLens(exporter=Capture())
+    proc = AgentLensTracingProcessor(lens)
+
+    # fakes mirroring the SDK: trace + spans carrying typed span_data
+    class Trace:
+        trace_id = "trace_abc123"
+        name = "support_workflow"
+        group_id = "thread-9"
+
+    class AgentSpanData:
+        name = "triage_agent"
+
+    class GenerationSpanData:
+        model = "gpt-4o"
+        usage = {"input_tokens": 800, "output_tokens": 200}
+        input = "user question"
+        output = "call lookup_order"
+
+    class FunctionSpanData:
+        name = "lookup_order"
+        input = '{"order_id": "ORD-1"}'
+        output = "shipped"
+
+    class FakeSpan:
+        def __init__(self, span_id, data, parent_id=None, error=None):
+            self.trace_id = "trace_abc123"
+            self.span_id = span_id
+            self.parent_id = parent_id
+            self.span_data = data
+            self.error = error
+
+    proc.on_trace_start(Trace())
+    agent_span = FakeSpan("s1", AgentSpanData())
+    gen_span = FakeSpan("s2", GenerationSpanData(), parent_id="s1")
+    fn_span = FakeSpan("s3", FunctionSpanData(), parent_id="s1", error={"message": "order not found"})
+    for sp in (agent_span, gen_span, fn_span):
+        proc.on_span_start(sp)
+        proc.on_span_end(sp)
+    proc.on_trace_end(Trace())
+
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["name"] == "support_workflow"
+    assert run["metadata"]["group_id"] == "thread-9"
+
+    by_name = {s["name"]: s for s in run["spans"]}
+    assert by_name["triage_agent"]["kind"] == "agent"
+    assert by_name["gpt-4o"]["kind"] == "llm"
+    assert by_name["gpt-4o"]["llm"]["total_tokens"] == 1000
+    assert by_name["gpt-4o"]["llm"]["cost_usd"] > 0
+    assert by_name["lookup_order"]["kind"] == "tool"
+    # the SDK reports failures on the span, not by raising
+    assert by_name["lookup_order"]["status"] == "error"
+    assert "order not found" in by_name["lookup_order"]["error"]
+    assert run["status"] == "error", "a failed span should fail the run"
+
+    # nesting follows the SDK's parent_id, not arrival order
+    assert by_name["gpt-4o"]["parent_id"] == by_name["triage_agent"]["span_id"]
+    print("test_openai_agents_processor_builds_a_run ok")
+
+
+def test_openai_agents_processor_handles_concurrent_traces():
+    from agentlens.integrations.openai_agents import AgentLensTracingProcessor
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    proc = AgentLensTracingProcessor(AgentLens(exporter=Capture()))
+
+    class Trace:
+        def __init__(self, tid, name):
+            self.trace_id, self.name, self.group_id = tid, name, None
+
+    class Data:
+        def __init__(self, name):
+            self.name = name
+
+    class FakeSpan:
+        def __init__(self, tid, sid, name):
+            self.trace_id, self.span_id, self.parent_id = tid, sid, None
+            self.span_data, self.error = Data(name), None
+
+    a, b = Trace("trace_a", "workflow_a"), Trace("trace_b", "workflow_b")
+    proc.on_trace_start(a)
+    proc.on_trace_start(b)          # interleaved, as concurrent workflows are
+    for sp in (FakeSpan("trace_a", "1", "step_a"), FakeSpan("trace_b", "2", "step_b")):
+        proc.on_span_start(sp)
+        proc.on_span_end(sp)
+    proc.on_trace_end(a)
+    proc.on_trace_end(b)
+
+    assert len(runs) == 2
+    names = {r["name"]: [s["name"] for s in r["spans"]] for r in runs}
+    assert names["workflow_a"] == ["workflow_a", "step_a"], names
+    assert names["workflow_b"] == ["workflow_b", "step_b"], names
+    print("test_openai_agents_processor_handles_concurrent_traces ok")
+
+
+def test_openai_agents_shutdown_exports_open_traces():
+    from agentlens.integrations.openai_agents import AgentLensTracingProcessor
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    proc = AgentLensTracingProcessor(AgentLens(exporter=Capture()))
+
+    class Trace:
+        trace_id, name, group_id = "trace_x", "interrupted", None
+
+    proc.on_trace_start(Trace())
+    proc.shutdown()   # process exiting mid-trace
+
+    assert len(runs) == 1, "an open trace should not vanish on shutdown"
+    assert runs[0]["status"] == "cancelled"
+    print("test_openai_agents_shutdown_exports_open_traces ok")
+
+
+def test_langgraph_records_each_node():
+    from agentlens.integrations.langgraph import trace_graph
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(json.loads(json.dumps(run.to_dict())))
+
+    lens = AgentLens(exporter=Capture())
+
+    class FakeGraph:
+        """Mirrors stream_mode='updates': one {node: delta} chunk per step."""
+
+        def stream(self, inputs, config=None, stream_mode=None, **kwargs):
+            assert stream_mode == "updates"
+            yield {"classify": {"intent": "refund"}}
+            yield {"retrieve": {"docs": ["policy.md"]}}
+            yield {"respond": {"answer": "refund approved"}}
+
+        def invoke(self, inputs, config=None, **kwargs):
+            raise AssertionError("should have streamed instead")
+
+    app = trace_graph(lens, FakeGraph(), run_name="support_graph")
+    result = app.invoke({"question": "refund please"})
+
+    assert result["answer"] == "refund approved"
+    run = runs[0]
+    assert [s["name"] for s in run["spans"]] == ["support_graph", "classify", "retrieve", "respond"]
+    assert all(s["kind"] == "chain" for s in run["spans"][1:])
+
+    # per-node state attribution is the point of a graph trace
+    classify = run["spans"][1]
+    assert classify["attributes"]["langgraph.node"] == "classify"
+    assert classify["attributes"]["langgraph.step"] == 0
+    assert classify["attributes"]["langgraph.state_keys_changed"] == "+intent"
+    assert run["spans"][2]["attributes"]["langgraph.state_keys_changed"] == "+docs"
+    print("test_langgraph_records_each_node ok")
+
+
+def test_langgraph_falls_back_when_streaming_is_unsupported():
+    from agentlens.integrations.langgraph import trace_graph
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    class OldGraph:
+        def stream(self, inputs, config=None, **kwargs):
+            raise TypeError("stream_mode is not supported on this version")
+
+        def invoke(self, inputs, config=None, **kwargs):
+            return {"answer": "ok"}
+
+    app = trace_graph(AgentLens(exporter=Capture()), OldGraph(), run_name="legacy")
+    assert app.invoke({"q": 1}) == {"answer": "ok"}
+    # the run still lands, just without per-node spans
+    assert runs[0]["status"] == "success"
+    assert len(runs[0]["spans"]) == 1
+    print("test_langgraph_falls_back_when_streaming_is_unsupported ok")
+
+
+def test_langgraph_records_failures_and_passes_through():
+    from agentlens.integrations.langgraph import trace_graph
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    class BrokenGraph:
+        node_names = ["a", "b"]      # an attribute the wrapper doesn't know about
+
+        def stream(self, inputs, config=None, stream_mode=None, **kwargs):
+            yield {"classify": {"intent": "x"}}
+            raise RuntimeError("node 'retrieve' crashed")
+
+    app = trace_graph(AgentLens(exporter=Capture()), BrokenGraph(), run_name="g")
+    raised = False
+    try:
+        app.invoke({"q": 1})
+    except RuntimeError:
+        raised = True
+    assert raised, "the graph's error must reach the caller"
+    assert runs[0]["status"] == "error"
+    # the node that did run is still recorded
+    assert [s["name"] for s in runs[0]["spans"]] == ["g", "classify"]
+    # unknown attributes fall through to the wrapped graph
+    assert app.node_names == ["a", "b"]
+    print("test_langgraph_records_failures_and_passes_through ok")
+
+
+def test_pydantic_ai_traces_run_and_tools():
+    import asyncio
+
+    from agentlens.integrations.pydantic_ai import trace_agent
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(json.loads(json.dumps(run.to_dict())))
+
+    lens = AgentLens(exporter=Capture())
+
+    def get_weather(city):
+        return f"sunny in {city}"
+
+    class Tool:
+        def __init__(self, fn, name):
+            self.function, self.name = fn, name
+
+    class Result:
+        output = "It is sunny in Lisbon."
+        model_name = "openai:gpt-4o"
+        usage = {"request_tokens": 500, "response_tokens": 120}
+
+    class FakeAgent:
+        name = "weather_agent"
+
+        def __init__(self):
+            self._function_tools = {"get_weather": Tool(get_weather, "get_weather")}
+
+        async def run(self, prompt, **kwargs):
+            # the framework calls the (now wrapped) tool during the run
+            self._function_tools["get_weather"].function("Lisbon")
+            return Result()
+
+    agent = trace_agent(lens, FakeAgent())
+    result = asyncio.run(agent.run("weather in Lisbon?"))
+
+    assert result.output == "It is sunny in Lisbon."
+    run = runs[0]
+    names = [s["name"] for s in run["spans"]]
+    assert "weather_agent" in names
+    assert "get_weather" in names, "tool call should be its own node"
+    assert "openai:gpt-4o" in names
+
+    tool_span = next(s for s in run["spans"] if s["name"] == "get_weather")
+    assert tool_span["kind"] == "tool"
+    assert "sunny in Lisbon" in tool_span["outputs"]
+
+    model_span = next(s for s in run["spans"] if s["kind"] == "llm")
+    assert model_span["llm"]["total_tokens"] == 620
+    assert model_span["llm"]["cost_usd"] > 0
+    assert run["total_tokens"] == 620
+    print("test_pydantic_ai_traces_run_and_tools ok")
+
+
+def test_pydantic_ai_survives_an_unknown_tool_registry():
+    import asyncio
+
+    from agentlens.integrations.pydantic_ai import trace_agent
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    class Result:
+        output = "done"
+        model_name = ""
+        usage = None
+
+    class FutureAgent:
+        """A version that moved its tool registry somewhere new."""
+
+        name = "future_agent"
+
+        async def run(self, prompt, **kwargs):
+            return Result()
+
+    agent = trace_agent(AgentLens(exporter=Capture()), FutureAgent())
+    assert asyncio.run(agent.run("x")).output == "done"
+    # no per-tool spans, but the run itself is intact rather than lost
+    assert runs[0]["status"] == "success"
+    assert runs[0]["spans"][0]["name"] == "future_agent"
+    print("test_pydantic_ai_survives_an_unknown_tool_registry ok")
+
+
+def test_pydantic_ai_records_failures():
+    import asyncio
+
+    from agentlens.integrations.pydantic_ai import trace_agent
+
+    runs = []
+
+    class Capture:
+        def export(self, run):
+            runs.append(run.to_dict())
+
+    class FailingAgent:
+        name = "failing_agent"
+
+        async def run(self, prompt, **kwargs):
+            raise ValueError("model refused")
+
+    agent = trace_agent(AgentLens(exporter=Capture()), FailingAgent())
+    raised = False
+    try:
+        asyncio.run(agent.run("x"))
+    except ValueError:
+        raised = True
+    assert raised
+    assert runs[0]["status"] == "error"
+    assert "model refused" in runs[0]["error"]
+    print("test_pydantic_ai_records_failures ok")
+
+
 if __name__ == "__main__":
     test_basic_dag()
     test_error_and_retry()
@@ -1057,4 +1411,13 @@ if __name__ == "__main__":
     test_redaction_failure_drops_rather_than_leaks()
     test_redaction_scan_reports_without_changing()
     test_custom_patterns_take_priority()
+    test_openai_agents_processor_builds_a_run()
+    test_openai_agents_processor_handles_concurrent_traces()
+    test_openai_agents_shutdown_exports_open_traces()
+    test_langgraph_records_each_node()
+    test_langgraph_falls_back_when_streaming_is_unsupported()
+    test_langgraph_records_failures_and_passes_through()
+    test_pydantic_ai_traces_run_and_tools()
+    test_pydantic_ai_survives_an_unknown_tool_registry()
+    test_pydantic_ai_records_failures()
     print("all SDK tests passed")

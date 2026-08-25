@@ -1,0 +1,280 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes an in-flight run on the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sdk-python:
+    name: Python SDK (${{ matrix.python }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The package advertises 3.9+; the matrix is what makes that claim
+        # true rather than aspirational. Windows and macOS are included
+        # because the SDK touches contextvars, threads, and the filesystem.
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest]
+        include:
+          - python: "3.12"
+            os: macos-latest
+          - python: "3.12"
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install the SDK
+        working-directory: sdk
+        run: pip install -e ".[dev]"
+
+      - name: Verify it has no runtime dependencies
+        working-directory: sdk
+        shell: bash
+        run: |
+          # The zero-dependency promise is load-bearing: this SDK is
+          # embedded in other people's dependency trees.
+          deps=$(pip show agentlens | awk -F': ' '/^Requires:/ {print $2}')
+          if [ -n "$deps" ]; then
+            echo "agentlens gained runtime dependencies: $deps"
+            exit 1
+          fi
+          echo "no runtime dependencies"
+
+      - name: Run tests
+        working-directory: sdk
+        run: python test_sdk.py
+
+      - name: Import every integration without its framework installed
+        working-directory: sdk
+        run: |
+          python -c "
+          import agentlens
+          for m in ('langchain', 'langgraph', 'crewai', 'openai_agents', 'pydantic_ai'):
+              __import__(f'agentlens.integrations.{m}')
+          print('all integrations import cleanly')
+          "
+
+  server:
+    name: Server (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -e ./sdk
+          pip install -e "./server[dev]"
+
+      - name: Run tests
+        working-directory: server
+        run: python -m pytest tests -q
+
+  server-postgres:
+    name: Server against real Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: agentlens
+          POSTGRES_PASSWORD: agentlens
+          POSTGRES_DB: agentlens
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agentlens"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -e ./sdk
+          pip install -e "./server[dev]"
+
+      - name: Smoke test the real schema
+        env:
+          DATABASE_URL: postgresql+asyncpg://agentlens:agentlens@localhost:5432/agentlens
+        run: |
+          # The test suite runs on SQLite for speed, but JSONB columns and
+          # the GIN index only exist on Postgres — so the schema needs
+          # exercising against the database it's actually deployed on.
+          python - <<'PY'
+          import asyncio, json, os, sys, tempfile
+          sys.path.insert(0, "server"); sys.path.insert(0, "sdk")
+          from httpx import ASGITransport, AsyncClient
+          from agentlens_server.main import app
+          from agentlens import AgentLens, FileExporter, SpanKind, score
+
+          path = os.path.join(tempfile.mkdtemp(), "r.jsonl")
+          lens = AgentLens(exporter=FileExporter(path))
+
+          @lens.tool("search")
+          def search(q): return ["d"]
+
+          @lens.span("answer", kind=SpanKind.LLM)
+          def answer(d): return "a"
+
+          @lens.trace("ci_agent", tags=["ci"])
+          def agent(q):
+              try: return answer(search(q))
+              finally: score("faithfulness", 0.9, threshold=0.85)
+
+          agent("q")
+          run = json.loads(open(path).read().strip())
+
+          async def main():
+              async with app.router.lifespan_context(app):
+                  async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+                      assert (await c.post("/api/ingest/run", json=run)).status_code == 201
+                      stored = (await c.get(f"/api/runs/{run['run_id']}")).json()
+                      assert len(stored["spans"]) == 3
+                      assert stored["scores"][0]["name"] == "faithfulness"
+                      assert (await c.get("/api/runs/stats")).json()["total_runs"] == 1
+                      print("postgres schema ok")
+
+          asyncio.run(main())
+          PY
+
+  sdk-typescript:
+    name: TypeScript SDK (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: sdk-ts/package-lock.json
+
+      - name: Install
+        working-directory: sdk-ts
+        run: npm ci || npm install
+
+      - name: Typecheck
+        working-directory: sdk-ts
+        run: npx tsc --noEmit
+
+      - name: Test
+        working-directory: sdk-ts
+        run: npm test
+
+  interop:
+    name: Python ↔ TypeScript wire compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install
+        run: |
+          pip install -e ./sdk
+          pip install -e "./server[dev]"
+          cd sdk-ts && npm install && npm run build
+
+      - name: Both SDKs must produce the same DAG
+        run: python scripts/interop_check.py
+
+  ui:
+    name: UI build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install
+        working-directory: ui
+        run: npm ci || npm install
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check .
+
+      - name: Format check
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check .
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Server image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: UI image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ui
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

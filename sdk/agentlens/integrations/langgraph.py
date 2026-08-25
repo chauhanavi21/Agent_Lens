@@ -87,11 +87,13 @@ class TracedGraph:
         span = Span(name=name, kind=SpanKind.CHAIN, parent_id=root.span_id)
         span.inputs = _preview(before)
         span.outputs = _preview(after)
-        span.attributes.update({
-            "langgraph.node": name,
-            "langgraph.step": index,
-            "langgraph.state_keys_changed": ",".join(_changed_keys(before, after)),
-        })
+        span.attributes.update(
+            {
+                "langgraph.node": name,
+                "langgraph.step": index,
+                "langgraph.state_keys_changed": ",".join(_changed_keys(before, after)),
+            }
+        )
         span.finish(SpanStatus.SUCCESS)
         run.spans.append(span)
 
@@ -153,6 +155,8 @@ class TracedGraph:
             raise
 
 
-def trace_graph(lens, graph: Any, run_name: str = "langgraph", tags: Optional[list[str]] = None) -> TracedGraph:
+def trace_graph(
+    lens, graph: Any, run_name: str = "langgraph", tags: Optional[list[str]] = None
+) -> TracedGraph:
     """Wrap a compiled LangGraph so each node execution becomes a span."""
     return TracedGraph(lens, graph, run_name, tags)

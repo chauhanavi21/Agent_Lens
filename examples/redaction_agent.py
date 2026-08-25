@@ -21,7 +21,7 @@ redactor = Redactor(
         "phone": "mask",
         "credit_card": "drop",
         "ssn": "drop",
-        "ipv4": "allow",          # internal service IPs are useful, not sensitive
+        "ipv4": "allow",  # internal service IPs are useful, not sensitive
     },
     extra_patterns={"order_id": r"\bORD-\d{8}\b"},
 )

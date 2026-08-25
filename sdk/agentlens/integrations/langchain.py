@@ -23,6 +23,7 @@ from ..tracer import AgentLens
 try:
     from langchain_core.callbacks import BaseCallbackHandler  # type: ignore
 except ImportError:  # pragma: no cover
+
     class BaseCallbackHandler:  # minimal stand-in so import never fails
         pass
 
@@ -37,7 +38,9 @@ class AgentLensCallbackHandler(BaseCallbackHandler):
 
     # -- helpers ------------------------------------------------------- #
 
-    def _open(self, run_id: UUID, parent_run_id: Optional[UUID], name: str, kind: SpanKind, inputs: Any) -> Span:
+    def _open(
+        self, run_id: UUID, parent_run_id: Optional[UUID], name: str, kind: SpanKind, inputs: Any
+    ) -> Span:
         parent = self._spans.get(parent_run_id) if parent_run_id else self._root
         span = Span(name=name, kind=kind, parent_id=(parent or self._root).span_id)
         span.inputs = _preview(inputs)
@@ -45,7 +48,9 @@ class AgentLensCallbackHandler(BaseCallbackHandler):
         self._spans[run_id] = span
         return span
 
-    def _close(self, run_id: UUID, outputs: Any = None, error: Optional[BaseException] = None) -> Optional[Span]:
+    def _close(
+        self, run_id: UUID, outputs: Any = None, error: Optional[BaseException] = None
+    ) -> Optional[Span]:
         span = self._spans.pop(run_id, None)
         if span is None:
             return None
@@ -113,7 +118,9 @@ class AgentLensCallbackHandler(BaseCallbackHandler):
             span.llm.model = model
             span.llm.input_tokens = int(usage.get("prompt_tokens", 0))
             span.llm.output_tokens = int(usage.get("completion_tokens", 0))
-            span.llm.cost_usd = estimate_cost_usd(model, span.llm.input_tokens, span.llm.output_tokens, self.lens.cost_table)
+            span.llm.cost_usd = estimate_cost_usd(
+                model, span.llm.input_tokens, span.llm.output_tokens, self.lens.cost_table
+            )
             span.llm.response_preview = _preview(response)
         self._close(run_id, response)
 

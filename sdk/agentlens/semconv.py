@@ -162,12 +162,14 @@ def run_attributes(run: Any, dual_emit: bool = True) -> dict[str, Any]:
         "gen_ai.conversation.id": run.run_id,
     }
     if dual_emit:
-        attrs.update({
-            "agentlens.run.id": run.run_id,
-            "agentlens.run.status": run.status.value,
-            "agentlens.run.total_tokens": run.total_tokens,
-            "agentlens.run.total_cost_usd": run.total_cost_usd,
-        })
+        attrs.update(
+            {
+                "agentlens.run.id": run.run_id,
+                "agentlens.run.status": run.status.value,
+                "agentlens.run.total_tokens": run.total_tokens,
+                "agentlens.run.total_cost_usd": run.total_cost_usd,
+            }
+        )
         if run.tags:
             attrs["agentlens.run.tags"] = ",".join(run.tags)
         for s in getattr(run, "scores", []) or []:

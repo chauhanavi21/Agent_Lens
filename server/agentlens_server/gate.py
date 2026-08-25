@@ -30,8 +30,12 @@ def aggregate(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             except (KeyError, TypeError, ValueError):
                 continue
     return {
-        name: {"mean": round(mean(vals), 4), "n": len(vals),
-               "min": round(min(vals), 4), "max": round(max(vals), 4)}
+        name: {
+            "mean": round(mean(vals), 4),
+            "n": len(vals),
+            "min": round(min(vals), 4),
+            "max": round(max(vals), 4),
+        }
         for name, vals in buckets.items()
     }
 
@@ -66,14 +70,22 @@ def evaluate(
         if cand is None:
             # a metric the baseline measured but this branch didn't produce
             # is a gap in coverage, not a silent pass
-            checks.append({"metric": name, "status": "missing", "candidate": None,
-                           "baseline": baseline.get(name, {}).get("mean"),
-                           "detail": "no runs scored this metric"})
+            checks.append(
+                {
+                    "metric": name,
+                    "status": "missing",
+                    "candidate": None,
+                    "baseline": baseline.get(name, {}).get("mean"),
+                    "detail": "no runs scored this metric",
+                }
+            )
             failures.append(f"{name}: not scored on this branch")
             continue
 
         row: dict[str, Any] = {
-            "metric": name, "candidate": cand["mean"], "n": cand["n"],
+            "metric": name,
+            "candidate": cand["mean"],
+            "n": cand["n"],
             "baseline": baseline.get(name, {}).get("mean"),
             "threshold": thresholds.get(name),
         }
@@ -106,7 +118,8 @@ def evaluate(
         "summary": (
             "All eval checks passed."
             if passed
-            else f"{len(failures)} eval check(s) failed: " + "; ".join(failures[:3])
+            else f"{len(failures)} eval check(s) failed: "
+            + "; ".join(failures[:3])
             + ("…" if len(failures) > 3 else "")
         ),
     }

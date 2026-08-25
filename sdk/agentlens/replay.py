@@ -80,7 +80,7 @@ class Cassette:
     # -- construction --------------------------------------------------- #
 
     @classmethod
-    def from_run(cls, run: dict[str, Any], kinds: frozenset[str] = DEFAULT_REPLAYED_KINDS) -> "Cassette":
+    def from_run(cls, run: dict[str, Any], kinds: frozenset[str] = DEFAULT_REPLAYED_KINDS) -> Cassette:
         calls: dict[str, list[RecordedCall]] = {}
         spans = sorted(run.get("spans") or [], key=lambda s: s.get("started_at") or 0)
         for span in spans:
@@ -120,24 +120,23 @@ class Cassette:
         )
 
     @classmethod
-    def load(cls, path: str) -> "Cassette":
+    def load(cls, path: str) -> Cassette:
         with open(path, encoding="utf-8") as f:
             return cls.from_dict(json.load(f))
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Cassette":
+    def from_dict(cls, data: dict[str, Any]) -> Cassette:
         return cls(
             run_id=data.get("run_id", ""),
             name=data.get("name", ""),
             metadata=data.get("metadata", {}),
             calls={
-                name: [RecordedCall(**c) for c in items]
-                for name, items in (data.get("calls") or {}).items()
+                name: [RecordedCall(**c) for c in items] for name, items in (data.get("calls") or {}).items()
             },
         )
 
     @classmethod
-    def fetch(cls, endpoint: str, run_id: str, api_key: Optional[str] = None) -> "Cassette":
+    def fetch(cls, endpoint: str, run_id: str, api_key: Optional[str] = None) -> Cassette:
         """Pull a cassette straight from a running AgentLens server."""
         url = endpoint.rstrip("/") + f"/api/runs/{run_id}/cassette"
         headers = {}
@@ -156,8 +155,15 @@ class Cassette:
             "metadata": self.metadata,
             "calls": {
                 name: [
-                    {"name": c.name, "kind": c.kind, "output": c.output, "error": c.error,
-                     "inputs": c.inputs, "truncated": c.truncated, "duration_ms": c.duration_ms}
+                    {
+                        "name": c.name,
+                        "kind": c.kind,
+                        "output": c.output,
+                        "error": c.error,
+                        "inputs": c.inputs,
+                        "truncated": c.truncated,
+                        "duration_ms": c.duration_ms,
+                    }
                     for c in items
                 ]
                 for name, items in self.calls.items()
@@ -287,6 +293,7 @@ def replay(
 # divergence
 # --------------------------------------------------------------------------- #
 
+
 def divergence(original: dict[str, Any], replayed: dict[str, Any]) -> dict[str, Any]:
     """
     Compare a replayed run against the run it was recorded from.
@@ -295,6 +302,7 @@ def divergence(original: dict[str, Any], replayed: dict[str, Any]) -> dict[str, 
     code's doing. That's the useful signal: "this fix changes the path taken
     at step 4" or "this refactor added two extra search calls".
     """
+
     def sequence(run: dict[str, Any]) -> list[tuple[str, str]]:
         spans = sorted(run.get("spans") or [], key=lambda s: s.get("started_at") or 0)
         return [(s["name"], s.get("kind", "custom")) for s in spans]

@@ -30,14 +30,14 @@ server_lens = AgentLens(endpoint="http://localhost:7430")
 # the MCP server process
 # --------------------------------------------------------------------------- #
 
+
 @mcp_server_span(server_lens, server_name="github")
 def create_issue(arguments=None, _meta=None):
     """A tool handler. Anything traced in here nests inside the caller's DAG."""
     run = current_run()
 
-    api = Span(name="github_api_post", kind=SpanKind.TOOL,
-               parent_id=run.spans[0].span_id, service="github")
-    time.sleep(0.4)                       # the slow downstream call
+    api = Span(name="github_api_post", kind=SpanKind.TOOL, parent_id=run.spans[0].span_id, service="github")
+    time.sleep(0.4)  # the slow downstream call
     api.attributes["http.status_code"] = 201
     api.finish(SpanStatus.SUCCESS)
     run.spans.append(api)
@@ -56,6 +56,7 @@ def search_issues(arguments=None, _meta=None):
 # a stand-in for mcp.ClientSession — swap in the real one unchanged
 # --------------------------------------------------------------------------- #
 
+
 class FakeMCPSession:
     transport = "stdio"
 
@@ -72,7 +73,7 @@ class FakeMCPSession:
 def issue_agent(title):
     session = trace_mcp_session(agent_lens, FakeMCPSession(), server_name="github")
     session.list_tools()
-    session.call_tool("search_issues", {"q": title})   # fails, agent continues
+    session.call_tool("search_issues", {"q": title})  # fails, agent continues
     return session.call_tool("create_issue", {"title": title})
 
 

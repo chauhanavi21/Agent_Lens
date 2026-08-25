@@ -80,7 +80,7 @@ class TracedAgent:
                     continue
                 name = getattr(tool, "name", None) or getattr(fn, "__name__", str(key))
                 wrapped = self._lens.tool(name)(fn)
-                setattr(wrapped, "__agentlens_wrapped__", True)
+                wrapped.__agentlens_wrapped__ = True
                 for target in ("function", "func"):
                     if hasattr(tool, target):
                         try:
@@ -158,6 +158,8 @@ class TracedAgent:
             raise
 
 
-def trace_agent(lens, agent: Any, run_name: Optional[str] = None, tags: Optional[list[str]] = None) -> TracedAgent:
+def trace_agent(
+    lens, agent: Any, run_name: Optional[str] = None, tags: Optional[list[str]] = None
+) -> TracedAgent:
     """Wrap a Pydantic AI Agent so its runs and tool calls become spans."""
     return TracedAgent(lens, agent, run_name, tags)

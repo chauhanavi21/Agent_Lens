@@ -32,19 +32,37 @@ import hmac
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Pattern
+from typing import Any, Optional, Pattern
 
 Policy = str  # "mask" | "hash" | "drop" | "allow"
 
 # Keys whose values are redacted regardless of what they look like — a
 # short random API key is indistinguishable from a random string, so the
 # field name is the only reliable signal.
-SENSITIVE_KEYS = frozenset({
-    "password", "passwd", "secret", "token", "api_key", "apikey", "access_token",
-    "refresh_token", "authorization", "auth", "credentials", "private_key",
-    "client_secret", "session_id", "cookie", "ssn", "credit_card", "card_number",
-    "cvv", "pin",
-})
+SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "auth",
+        "credentials",
+        "private_key",
+        "client_secret",
+        "session_id",
+        "cookie",
+        "ssn",
+        "credit_card",
+        "card_number",
+        "cvv",
+        "pin",
+    }
+)
 
 # Order matters: more specific patterns run first so a credit card isn't
 # partially eaten by the phone-number pattern.
@@ -204,6 +222,7 @@ class Redactor:
         text = self._kv_pattern.sub(kv_replace, text)
 
         for kind, pattern in self._compiled:
+
             def replace(m: re.Match[str], kind=kind) -> str:
                 value = m.group(0)
                 # a long digit run is only a card if it passes Luhn;
@@ -277,7 +296,8 @@ class Redactor:
         found: dict[str, int] = {}
         for kind, pattern in self._compiled:
             matches = [
-                m for m in pattern.findall(text or "")
+                m
+                for m in pattern.findall(text or "")
                 if kind != "credit_card" or luhn_valid(m if isinstance(m, str) else "")
             ]
             if matches:

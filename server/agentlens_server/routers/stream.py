@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import API_KEY
-from ..db import get_session
 from ..live import broker, event_stream, live_store
 
 router = APIRouter(tags=["live"])

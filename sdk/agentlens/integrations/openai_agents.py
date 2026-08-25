@@ -27,8 +27,8 @@ from __future__ import annotations
 import threading
 from typing import Any, Optional
 
-from ..models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 from ..cost import estimate_cost_usd
+from ..models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 
 # The SDK names its span_data classes; map the recognizable part to a kind.
 KIND_BY_DATA_TYPE = {
@@ -200,7 +200,9 @@ class AgentLensTracingProcessor:
         for attr in ("from_agent", "to_agent", "tool_name", "triggered", "type"):
             value = getattr(data, attr, None)
             if value is not None:
-                span.attributes[f"openai.{attr}"] = value if isinstance(value, (str, int, float, bool)) else str(value)
+                span.attributes[f"openai.{attr}"] = (
+                    value if isinstance(value, (str, int, float, bool)) else str(value)
+                )
 
     # -- lifecycle ------------------------------------------------------ #
 

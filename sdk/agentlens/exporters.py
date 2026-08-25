@@ -38,9 +38,8 @@ class FileExporter:
 
     def export(self, run: AgentRun) -> None:
         line = json.dumps(run.to_dict(), default=str)
-        with self._lock:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+        with self._lock, open(self.path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
 
 
 class HttpExporter:
@@ -55,7 +54,7 @@ class HttpExporter:
         self.api_key = api_key
         self.retries = retries
         self.timeout = timeout
-        self._q: "queue.Queue[Optional[AgentRun]]" = queue.Queue()
+        self._q: queue.Queue[Optional[AgentRun]] = queue.Queue()
         self._worker = threading.Thread(target=self._drain, daemon=True, name="agentlens-exporter")
         self._worker.start()
 

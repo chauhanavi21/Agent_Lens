@@ -45,7 +45,7 @@ def run_start_event(run: AgentRun) -> dict[str, Any]:
 
 def span_event(run: AgentRun, span: Span, kind: str) -> dict[str, Any]:
     return {
-        "type": kind,                      # span_start | span_end
+        "type": kind,  # span_start | span_end
         "ts": time.time(),
         "run_id": run.run_id,
         "trace_id": run.trace_id,
@@ -80,7 +80,7 @@ class StreamExporter:
         self.api_key = api_key
         self.timeout = timeout
         self.dropped = 0
-        self._q: "queue.Queue[Optional[tuple[str, dict]]]" = queue.Queue(maxsize=max_queue)
+        self._q: queue.Queue[Optional[tuple[str, dict]]] = queue.Queue(maxsize=max_queue)
         threading.Thread(target=self._drain, daemon=True, name="agentlens-stream").start()
 
     # -- exporter protocol --------------------------------------------- #

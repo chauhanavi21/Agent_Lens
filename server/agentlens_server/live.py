@@ -51,9 +51,15 @@ class LiveStore:
                 # events can outrun run_start, or the agent may have started
                 # before the server came up — synthesize a shell rather than
                 # dropping spans on the floor
-                run = {"run_id": run_id, "trace_id": event.get("trace_id"),
-                       "name": "(unknown run)", "tags": [], "status": "running",
-                       "started_at": event.get("ts", time.time()), "spans": []}
+                run = {
+                    "run_id": run_id,
+                    "trace_id": event.get("trace_id"),
+                    "name": "(unknown run)",
+                    "tags": [],
+                    "status": "running",
+                    "started_at": event.get("ts", time.time()),
+                    "spans": [],
+                }
                 self._runs[run_id] = run
 
             if kind in ("span_start", "span_end") and run is not None:
@@ -85,8 +91,11 @@ class LiveStore:
     def snapshot(self) -> list[dict[str, Any]]:
         now = time.time()
         return [
-            {**r, "span_count": len(r.get("spans") or []),
-             "duration_ms": round((now - r["started_at"]) * 1000, 2) if r.get("started_at") else None}
+            {
+                **r,
+                "span_count": len(r.get("spans") or []),
+                "duration_ms": round((now - r["started_at"]) * 1000, 2) if r.get("started_at") else None,
+            }
             for r in self._runs.values()
         ]
 
@@ -138,8 +147,13 @@ async def event_stream(run_id: Optional[str] = None, heartbeat: float = 15.0) ->
     """
     q = broker.subscribe()
     try:
-        yield sse({"type": "connected", "ts": time.time(),
-                   "live_runs": [r["run_id"] for r in live_store.snapshot()]})
+        yield sse(
+            {
+                "type": "connected",
+                "ts": time.time(),
+                "live_runs": [r["run_id"] for r in live_store.snapshot()],
+            }
+        )
         while True:
             try:
                 event = await asyncio.wait_for(q.get(), timeout=heartbeat)

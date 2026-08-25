@@ -65,7 +65,7 @@ def research_agent(query):
         try:
             pages.append(fetch_page(url))
         except TimeoutError:
-            pass          # retries exhausted; the failed attempts stay in the DAG
+            pass  # retries exhausted; the failed attempts stay in the DAG
     synthesize(pages)
     return f"report from {len(pages)} pages"
 

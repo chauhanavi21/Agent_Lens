@@ -73,5 +73,7 @@ class _TracedCrew:
         return getattr(self._crew, item)
 
 
-def trace_crew(lens: AgentLens, crew: Any, run_name: str = "crew_run", tags: Optional[list[str]] = None) -> _TracedCrew:
+def trace_crew(
+    lens: AgentLens, crew: Any, run_name: str = "crew_run", tags: Optional[list[str]] = None
+) -> _TracedCrew:
     return _TracedCrew(lens, crew, run_name, tags)

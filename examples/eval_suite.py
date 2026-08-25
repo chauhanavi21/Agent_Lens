@@ -26,9 +26,18 @@ CASES = [
 ]
 
 ANSWERS = {
-    "What is the capital of France?": ("The capital of France is Paris.", ["Paris is the capital of France."]),
-    "Who wrote Pride and Prejudice?": ("Jane Austen wrote it in 1813.", ["Pride and Prejudice, by Jane Austen."]),
-    "What is the boiling point of water at sea level?": ("Water boils at 100°C at sea level.", ["Water boils at 100°C."]),
+    "What is the capital of France?": (
+        "The capital of France is Paris.",
+        ["Paris is the capital of France."],
+    ),
+    "Who wrote Pride and Prejudice?": (
+        "Jane Austen wrote it in 1813.",
+        ["Pride and Prejudice, by Jane Austen."],
+    ),
+    "What is the boiling point of water at sea level?": (
+        "Water boils at 100°C at sea level.",
+        ["Water boils at 100°C."],
+    ),
 }
 
 

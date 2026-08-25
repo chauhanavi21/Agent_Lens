@@ -5,7 +5,15 @@
 **Open source observability runtime for AI agents.**
 *Langfuse traces LLM calls. AgentLens traces the whole agent.*
 
-`pip install agentlens` · Apache 2.0 · zero SDK dependencies
+[![CI](https://github.com/chauhanavi21/agentlens/actions/workflows/ci.yml/badge.svg)](https://github.com/chauhanavi21/agentlens/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/agentlens)](https://pypi.org/project/agentlens/)
+[![npm](https://img.shields.io/npm/v/@agentlens/sdk)](https://www.npmjs.com/package/@agentlens/sdk)
+[![Python](https://img.shields.io/pypi/pyversions/agentlens)](https://pypi.org/project/agentlens/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
+`pip install agentlens` · `npm i @agentlens/sdk` · Apache 2.0 · zero SDK dependencies
+
+[Architecture & design decisions →](ARCHITECTURE.md)
 
 </div>
 
@@ -55,16 +63,19 @@ from agentlens import AgentLens, SpanKind
 
 lens = AgentLens(endpoint="http://localhost:7430")
 
+
 @lens.trace("research_agent", tags=["prod"], max_cost_usd=0.10)
 def research_agent(query: str) -> str:
     docs = retrieve_docs(query)
     return summarize(docs)
 
+
 @lens.span("retrieve_docs", kind=SpanKind.RETRIEVAL)
 def retrieve_docs(query): ...
 
+
 @lens.llm_call("summarize", model="gpt-4o")
-def summarize(docs): ...   # token usage auto-extracted from the response
+def summarize(docs): ...  # token usage auto-extracted from the response
 ```
 
 Every decorated function becomes a node in the DAG. Nesting, async, and
@@ -123,15 +134,18 @@ OTLP traffic from SDKs you don't control.)
 ```python
 from agentlens import AgentLens, Redactor
 
-lens = AgentLens(endpoint="…", redact=Redactor(
-    policies={
-        "email": "hash",        # correlate a user across runs, store nothing
-        "phone": "mask",        # keep a recognizable shape
-        "credit_card": "drop",  # nothing survives
-        "ipv4": "allow",        # internal service IPs are useful
-    },
-    extra_patterns={"order_id": r"\bORD-\d{8}\b"},
-))
+lens = AgentLens(
+    endpoint="…",
+    redact=Redactor(
+        policies={
+            "email": "hash",  # correlate a user across runs, store nothing
+            "phone": "mask",  # keep a recognizable shape
+            "credit_card": "drop",  # nothing survives
+            "ipv4": "allow",  # internal service IPs are useful
+        },
+        extra_patterns={"order_id": r"\bORD-\d{8}\b"},
+    ),
+)
 ```
 
 `hash` is the one that makes redacted traces still worth having: a
@@ -180,6 +194,7 @@ your code run for real against it.
 
 ```python
 from agentlens import Cassette, replay
+
 
 def test_bug_471():
     cassette = Cassette.load("fixtures/bug-471.json")
@@ -360,9 +375,9 @@ await session.call_tool("create_issue", {"title": "..."})
 ```python
 from agentlens import mcp_server_span
 
+
 @mcp_server_span(lens, server_name="github")
-async def create_issue(arguments=None, _meta=None):
-    ...   # spans recorded here nest inside the caller's DAG
+async def create_issue(arguments=None, _meta=None): ...  # spans recorded here nest inside the caller's DAG
 ```
 
 The result is one waterfall:
@@ -398,10 +413,12 @@ sit beside the rest of your telemetry instead of in a silo:
 from agentlens import AgentLens, HttpExporter
 from agentlens.otel import MultiExporter, OTLPExporter
 
-lens = AgentLens(exporter=MultiExporter(
-    HttpExporter("http://localhost:7430"),                        # AgentLens UI
-    OTLPExporter("http://localhost:4318", service_name="my-agent"),  # collector
-))
+lens = AgentLens(
+    exporter=MultiExporter(
+        HttpExporter("http://localhost:7430"),  # AgentLens UI
+        OTLPExporter("http://localhost:4318", service_name="my-agent"),  # collector
+    )
+)
 ```
 
 A run arrives in Grafana, Tempo, Honeycomb, Jaeger, or Datadog as a proper
@@ -439,6 +456,7 @@ Score a run inline, or attach results from an eval suite afterwards.
 ```python
 from agentlens import score
 
+
 @lens.trace("qa_agent")
 def qa_agent(question):
     answer = generate(question)
@@ -452,8 +470,7 @@ from agentlens import from_ragas
 from ragas import evaluate
 
 result = evaluate(dataset, metrics=[faithfulness, answer_relevancy])
-lens.score_run(run_id, from_ragas(result), source="ragas",
-               thresholds={"faithfulness": 0.85})
+lens.score_run(run_id, from_ragas(result), source="ragas", thresholds={"faithfulness": 0.85})
 ```
 
 A score below its threshold is marked failed. That failure shows on the run,
@@ -495,22 +512,26 @@ from agentlens import AgentLens, SpanKind
 from agentlens.exporters import FileExporter
 
 lens = AgentLens(
-    endpoint="http://localhost:7430",   # or exporter=FileExporter("runs.jsonl")
-    api_key="your-key",                 # optional server auth
-    on_budget="raise",                  # "raise" | "pause" | "warn"
+    endpoint="http://localhost:7430",  # or exporter=FileExporter("runs.jsonl")
+    api_key="your-key",  # optional server auth
+    on_budget="raise",  # "raise" | "pause" | "warn"
 )
+
 
 @lens.trace("my_agent", tags=["prod"], max_total_tokens=5000, max_cost_usd=0.05)
 def my_agent(query): ...
 
+
 @lens.span("retrieve", kind=SpanKind.RETRIEVAL)
 def retrieve(query): ...
 
-@lens.tool("web_search", retries=2)     # failed attempts stay in the DAG,
-def web_search(query): ...              # linked by retry lineage
+
+@lens.tool("web_search", retries=2)  # failed attempts stay in the DAG,
+def web_search(query): ...  # linked by retry lineage
+
 
 @lens.llm_call("chat", model="gpt-4o")  # auto token/cost from OpenAI- and
-def chat(prompt): ...                   # Anthropic-style responses
+def chat(prompt): ...  # Anthropic-style responses
 ```
 
 Zero-config module decorators (`from agentlens import trace, tool`) print
@@ -526,22 +547,27 @@ the same UI with the same DAG, diffing, and eval scoring.
 # OpenAI Agents SDK — register a processor, its own tracing does the rest
 from agents import add_trace_processor
 from agentlens.integrations.openai_agents import AgentLensTracingProcessor
+
 add_trace_processor(AgentLensTracingProcessor(lens))
 
 # LangGraph — each node becomes a span, tagged with the state keys it changed
 from agentlens.integrations.langgraph import trace_graph
+
 app = trace_graph(lens, graph.compile(), run_name="support_graph")
 
 # Pydantic AI — wraps the agent and its registered tools
 from agentlens.integrations.pydantic_ai import trace_agent
+
 agent = trace_agent(lens, Agent("openai:gpt-4o", tools=[get_weather]))
 
 # LangChain
 from agentlens.integrations.langchain import AgentLensCallbackHandler
+
 chain.invoke(inputs, config={"callbacks": [AgentLensCallbackHandler(lens)]})
 
 # CrewAI
 from agentlens.integrations.crewai import trace_crew
+
 trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
 ```
 
@@ -565,6 +591,11 @@ Notes worth knowing:
   path; the wrapper is for setups without one.
 
 ## Architecture
+
+The decisions behind this — why spans are JSONB on the run row, why MCP
+stitching happens at read time, why the CI gate checks relative regression,
+why redaction runs SDK-side — are written up in
+**[ARCHITECTURE.md](ARCHITECTURE.md)**, along with known limitations.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -630,6 +661,21 @@ Notes worth knowing:
 - [x] TypeScript SDK — zero-dependency, wire-compatible with the Python SDK
 - [x] OTEL bridge — OTLP export and ingest, GenAI semantic conventions
 - [ ] Cloud hosted — managed AgentLens with team sharing
+
+## Development
+
+```bash
+make install     # SDKs, server, UI
+make test        # every suite: python, server, typescript, interop
+make lint        # ruff check + format check
+make up          # docker compose: postgres + server + UI
+```
+
+CI runs the Python SDK across 3.9–3.13 (plus macOS and Windows), the server
+across 3.10–3.13 and against real Postgres, the TypeScript SDK on Node
+18/20/22, a cross-language wire-compatibility check, the UI build, lint, and
+both Docker images. Releases publish to PyPI via trusted publishing and to
+npm with provenance — no long-lived tokens in either.
 
 ## Contributing
 

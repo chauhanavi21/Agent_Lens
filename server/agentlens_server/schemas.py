@@ -49,6 +49,7 @@ class ScoreIn(BaseModel):
 
 class ScoresIn(BaseModel):
     """Late-arriving scores from an eval harness, keyed by run."""
+
     run_id: str
     scores: list[ScoreIn]
 

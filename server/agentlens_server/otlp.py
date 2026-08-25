@@ -34,8 +34,10 @@ def _unwrap(value: dict[str, Any]) -> Any:
     if not isinstance(value, dict):
         return value
     for key, cast in (
-        ("stringValue", str), ("boolValue", bool),
-        ("intValue", int), ("doubleValue", float),
+        ("stringValue", str),
+        ("boolValue", bool),
+        ("intValue", int),
+        ("doubleValue", float),
     ):
         if key in value:
             try:
@@ -79,7 +81,7 @@ def _clean_name(name: str, attrs: dict[str, Any]) -> str:
         return str(tool)
     for op in KIND_FROM_OPERATION:
         if name.startswith(op + " "):
-            return name[len(op) + 1:]
+            return name[len(op) + 1 :]
     return name
 
 
@@ -115,22 +117,24 @@ def convert_trace(spans: list[dict], resource: dict[str, Any]) -> dict[str, Any]
                 "temperature": attrs.get("gen_ai.request.temperature"),
             }
 
-        parsed.append({
-            "span_id": s.get("spanId", ""),
-            "parent_id": s.get("parentSpanId") or None,
-            "name": _clean_name(s.get("name", "span"), attrs),
-            "kind": _span_kind(attrs, s.get("kind")),
-            "status": STATUS_FROM_CODE.get(status_code, "success"),
-            "started_at": started,
-            "ended_at": ended,
-            "duration_ms": round((ended - started) * 1000, 2) if ended else None,
-            "inputs": "",
-            "outputs": "",
-            "error": error,
-            "retry_of": attrs.get("agentlens.retry_of"),
-            "llm": llm,
-            "attributes": {k: v for k, v in attrs.items() if not k.startswith(("gen_ai.", "agentlens."))},
-        })
+        parsed.append(
+            {
+                "span_id": s.get("spanId", ""),
+                "parent_id": s.get("parentSpanId") or None,
+                "name": _clean_name(s.get("name", "span"), attrs),
+                "kind": _span_kind(attrs, s.get("kind")),
+                "status": STATUS_FROM_CODE.get(status_code, "success"),
+                "started_at": started,
+                "ended_at": ended,
+                "duration_ms": round((ended - started) * 1000, 2) if ended else None,
+                "inputs": "",
+                "outputs": "",
+                "error": error,
+                "retry_of": attrs.get("agentlens.retry_of"),
+                "llm": llm,
+                "attributes": {k: v for k, v in attrs.items() if not k.startswith(("gen_ai.", "agentlens."))},
+            }
+        )
 
     parsed.sort(key=lambda x: x["started_at"])
     ids = {p["span_id"] for p in parsed}
@@ -140,21 +144,23 @@ def convert_trace(spans: list[dict], resource: dict[str, Any]) -> dict[str, Any]
     root = roots[0] if roots else parsed[0]
 
     res_attrs = _attrs(resource.get("attributes"))
-    name = (
-        res_attrs.get("gen_ai.agent.name")
-        or root["name"]
-        or res_attrs.get("service.name")
-        or "otel_run"
-    )
+    name = res_attrs.get("gen_ai.agent.name") or root["name"] or res_attrs.get("service.name") or "otel_run"
 
     ends = [p["ended_at"] for p in parsed if p["ended_at"]]
     started_at = parsed[0]["started_at"]
     ended_at = max(ends) if ends else None
 
     scores = [
-        {"name": k.split("agentlens.score.", 1)[1], "value": float(v),
-         "source": "otel", "threshold": None, "passed": None, "comment": "", "span_id": None,
-         "recorded_at": started_at}
+        {
+            "name": k.split("agentlens.score.", 1)[1],
+            "value": float(v),
+            "source": "otel",
+            "threshold": None,
+            "passed": None,
+            "comment": "",
+            "span_id": None,
+            "recorded_at": started_at,
+        }
         for k, v in res_attrs.items()
         if k.startswith("agentlens.score.") and isinstance(v, (int, float))
     ]

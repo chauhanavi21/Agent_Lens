@@ -25,7 +25,7 @@ import urllib.request
 import uuid
 from typing import Any, Optional
 
-from .models import AgentRun, Span
+from .models import AgentRun
 from .semconv import (
     OTEL_SPAN_KIND,
     SEMCONV_VERSION,
@@ -94,11 +94,13 @@ def to_otel_spans(
         if s.parent_id:
             span["parentSpanId"] = _span_id(s.parent_id)
         if s.error:
-            span["events"] = [{
-                "name": "exception",
-                "timeUnixNano": str(_to_nanos(s.ended_at or s.started_at)),
-                "attributes": [_attr("exception.message", s.error[:1000])],
-            }]
+            span["events"] = [
+                {
+                    "name": "exception",
+                    "timeUnixNano": str(_to_nanos(s.ended_at or s.started_at)),
+                    "attributes": [_attr("exception.message", s.error[:1000])],
+                }
+            ]
         out.append(span)
     return out
 
@@ -117,13 +119,17 @@ def to_otlp_payload(
         **run_attributes(run, dual_emit),
     }
     return {
-        "resourceSpans": [{
-            "resource": {"attributes": [_attr(k, v) for k, v in resource_attrs.items()]},
-            "scopeSpans": [{
-                "scope": {"name": "agentlens", "version": SEMCONV_VERSION},
-                "spans": to_otel_spans(run, dual_emit, capture_content),
-            }],
-        }]
+        "resourceSpans": [
+            {
+                "resource": {"attributes": [_attr(k, v) for k, v in resource_attrs.items()]},
+                "scopeSpans": [
+                    {
+                        "scope": {"name": "agentlens", "version": SEMCONV_VERSION},
+                        "spans": to_otel_spans(run, dual_emit, capture_content),
+                    }
+                ],
+            }
+        ]
     }
 
 
@@ -156,7 +162,7 @@ class OTLPExporter:
         self.capture_content = CAPTURE_CONTENT if capture_content is None else capture_content
         self.retries = retries
         self.timeout = timeout
-        self._q: "queue.Queue[Optional[AgentRun]]" = queue.Queue()
+        self._q: queue.Queue[Optional[AgentRun]] = queue.Queue()
         threading.Thread(target=self._drain, daemon=True, name="agentlens-otlp").start()
 
     def export(self, run: AgentRun) -> None:

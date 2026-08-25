@@ -8,3 +8,7 @@ runs.jsonl
 .env
 sdk-ts/dist/
 sdk-ts/node_modules/
+
+# tooling caches
+.ruff_cache/
+.pytest_cache/

@@ -21,12 +21,12 @@ class SpanStatus(str, Enum):
 
 
 class SpanKind(str, Enum):
-    AGENT = "agent"          # top-level agent entry
-    TOOL = "tool"            # tool/function call
-    LLM = "llm"              # raw LLM call
-    CHAIN = "chain"          # sub-chain or sub-agent
+    AGENT = "agent"  # top-level agent entry
+    TOOL = "tool"  # tool/function call
+    LLM = "llm"  # raw LLM call
+    CHAIN = "chain"  # sub-chain or sub-agent
     RETRIEVAL = "retrieval"  # RAG retrieval step
-    MCP = "mcp"              # tool call over the Model Context Protocol
+    MCP = "mcp"  # tool call over the Model Context Protocol
     CUSTOM = "custom"
 
 
@@ -39,8 +39,8 @@ class LLMMetadata:
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
-    prompt_preview: str = ""     # first 500 chars of prompt
-    response_preview: str = ""   # first 500 chars of response
+    prompt_preview: str = ""  # first 500 chars of prompt
+    response_preview: str = ""  # first 500 chars of response
     temperature: Optional[float] = None
 
     @property
@@ -83,11 +83,11 @@ class Span:
     inputs: str = ""
     outputs: str = ""
     error: Optional[str] = None
-    retry_of: Optional[str] = None   # span_id of the attempt this retries
+    retry_of: Optional[str] = None  # span_id of the attempt this retries
     # Set on a span whose parent lives in another process (an MCP server
     # executing a tool the agent called). The server stitches on this.
     remote_parent_id: Optional[str] = None
-    service: Optional[str] = None    # which process recorded this span
+    service: Optional[str] = None  # which process recorded this span
     llm: Optional[LLMMetadata] = None
     attributes: dict[str, Any] = field(default_factory=dict)
 

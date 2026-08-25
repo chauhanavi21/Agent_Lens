@@ -63,9 +63,9 @@ def _record_fixture_if_missing():
     if os.path.exists(FIXTURE):
         return
 
-    from agentlens import FileExporter
-
     import tempfile
+
+    from agentlens import FileExporter
 
     rec = AgentLens(
         exporter=FileExporter(os.path.join(tempfile.mkdtemp(), "runs.jsonl")),
@@ -83,7 +83,7 @@ def _record_fixture_if_missing():
     @rec.trace("qa_agent")
     def buggy(query):
         result = rec_answer(rec_search(query))
-        return result["text"] + " [" + result["citations"][0] + "]"   # the bug
+        return result["text"] + " [" + result["citations"][0] + "]"  # the bug
 
     captured = {}
     rec.exporter.export = lambda run: captured.setdefault("run", run.to_dict())

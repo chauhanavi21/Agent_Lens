@@ -109,8 +109,7 @@ def trace_summary(run: dict[str, Any], max_spans: int = 40) -> str:
 
 def build_prompt(run: dict[str, Any], rubrics: list[Rubric]) -> str:
     criteria = "\n".join(
-        f"- {r.name}: {r.question}" + (f" ({r.guidance})" if r.guidance else "")
-        for r in rubrics
+        f"- {r.name}: {r.question}" + (f" ({r.guidance})" if r.guidance else "") for r in rubrics
     )
     return f"""You are evaluating an AI agent's execution trace.
 
@@ -162,11 +161,13 @@ def anthropic_judge(model: str = "claude-sonnet-4", api_key: Optional[str] = Non
     def call(prompt: str) -> str:
         if not key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set; cannot run the judge.")
-        body = json.dumps({
-            "model": model,
-            "max_tokens": 1024,
-            "messages": [{"role": "user", "content": prompt}],
-        }).encode()
+        body = json.dumps(
+            {
+                "model": model,
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+        ).encode()
         req = urllib.request.Request(
             "https://api.anthropic.com/v1/messages",
             data=body,
@@ -209,14 +210,16 @@ def judge_run(
         got = parsed.get(r.name)
         if got is None:
             continue
-        scores.append({
-            "name": r.name,
-            "value": got["value"],
-            "source": "llm_judge",
-            "threshold": r.threshold,
-            "passed": None if r.threshold is None else got["value"] >= r.threshold,
-            "comment": got["reason"],
-            "span_id": None,
-            "recorded_at": 0.0,
-        })
+        scores.append(
+            {
+                "name": r.name,
+                "value": got["value"],
+                "source": "llm_judge",
+                "threshold": r.threshold,
+                "passed": None if r.threshold is None else got["value"] >= r.threshold,
+                "comment": got["reason"],
+                "span_id": None,
+                "recorded_at": 0.0,
+            }
+        )
     return scores

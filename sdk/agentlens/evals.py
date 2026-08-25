@@ -32,7 +32,7 @@ from . import context as ctx
 class Score:
     name: str
     value: float
-    source: str = "custom"        # "ragas" | "custom" | "human" | …
+    source: str = "custom"  # "ragas" | "custom" | "human" | …
     threshold: Optional[float] = None
     comment: str = ""
     span_id: Optional[str] = None  # None = whole-run score
@@ -97,8 +97,9 @@ def score_run_payload(
     return {
         "run_id": run_id,
         "scores": [
-            Score(name=k, value=float(v), source=source,
-                  threshold=thresholds.get(k), comment=comment).to_dict()
+            Score(
+                name=k, value=float(v), source=source, threshold=thresholds.get(k), comment=comment
+            ).to_dict()
             for k, v in scores.items()
         ],
     }

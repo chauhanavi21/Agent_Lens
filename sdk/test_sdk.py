@@ -132,14 +132,15 @@ def test_scores():
     run = json.loads(open(path).read().strip())
     scores = {s["name"]: s for s in run["scores"]}
     assert scores["relevancy"]["passed"] is True
-    assert scores["relevancy"]["span_id"] is not None      # scoped to the span
-    assert scores["faithfulness"]["passed"] is False       # below threshold
-    assert scores["faithfulness"]["span_id"] is None       # whole-run score
+    assert scores["relevancy"]["span_id"] is not None  # scoped to the span
+    assert scores["faithfulness"]["passed"] is False  # below threshold
+    assert scores["faithfulness"]["span_id"] is None  # whole-run score
     print("test_scores ok")
 
 
 def test_score_outside_run_is_safe():
     from agentlens import score
+
     assert score("orphan", 1.0) is None  # no active run: no-op, no crash
     print("test_score_outside_run_is_safe ok")
 
@@ -148,7 +149,8 @@ def test_from_ragas():
     from agentlens import from_ragas
 
     assert from_ragas({"faithfulness": 0.86, "answer_relevancy": 0.91, "name": "x"}) == {
-        "faithfulness": 0.86, "answer_relevancy": 0.91
+        "faithfulness": 0.86,
+        "answer_relevancy": 0.91,
     }
 
     class R:  # per-sample list, as newer Ragas returns
@@ -179,6 +181,7 @@ def test_otlp_payload_shape():
         class R:
             model = "gpt-4o"
             usage = type("U", (), {"prompt_tokens": 100, "completion_tokens": 50})()
+
         return R()
 
     @lens.trace("research_agent")
@@ -193,7 +196,9 @@ def test_otlp_payload_shape():
 
     # convention span naming: "{operation} {target}"
     assert sorted(s["name"] for s in spans) == [
-        "chat gpt-4o", "execute_tool web_search", "invoke_agent research_agent"
+        "chat gpt-4o",
+        "execute_tool web_search",
+        "invoke_agent research_agent",
     ]
     # one trace id across the whole run, and a single root
     assert len({s["traceId"] for s in spans}) == 1
@@ -205,9 +210,9 @@ def test_otlp_payload_shape():
     attrs = {a["key"]: list(a["value"].values())[0] for a in llm["attributes"]}
     assert attrs["gen_ai.system"] == "openai"
     assert attrs["gen_ai.request.model"] == "gpt-4o"
-    assert attrs["gen_ai.usage.input_tokens"] == "100"   # OTLP ints are strings
+    assert attrs["gen_ai.usage.input_tokens"] == "100"  # OTLP ints are strings
     assert attrs["gen_ai.operation.name"] == "chat"
-    assert float(attrs["agentlens.cost.usd"]) > 0        # cost has no gen_ai home
+    assert float(attrs["agentlens.cost.usd"]) > 0  # cost has no gen_ai home
     print("test_otlp_payload_shape ok")
 
 
@@ -227,6 +232,7 @@ def test_otlp_content_is_opt_in():
         class R:
             model = "gpt-4o"
             usage = type("U", (), {"prompt_tokens": 10, "completion_tokens": 5})()
+
         return R()
 
     @lens.trace("a")
@@ -283,7 +289,7 @@ def test_traceparent_roundtrip():
     assert parse_traceparent("garbage") is None
     assert parse_traceparent(f"00-{'0' * 32}-{'b' * 16}-01") is None  # all-zero trace id
     assert parse_traceparent(f"00-{'z' * 32}-{'b' * 16}-01") is None  # not hex
-    assert parse_traceparent("00-abc-def-01") is None                 # wrong widths
+    assert parse_traceparent("00-abc-def-01") is None  # wrong widths
     print("test_traceparent_roundtrip ok")
 
 
@@ -331,7 +337,7 @@ def test_mcp_context_propagation():
 
 
 def test_mcp_is_error_payload():
-    from agentlens import mcp_server_span, trace_mcp_session
+    from agentlens import trace_mcp_session
 
     runs = []
 
@@ -475,7 +481,8 @@ def test_ci_threshold_parsing():
     from agentlens.ci import _parse_thresholds
 
     assert _parse_thresholds(["grounding=0.85", "task_completion=0.8"]) == {
-        "grounding": 0.85, "task_completion": 0.8
+        "grounding": 0.85,
+        "task_completion": 0.8,
     }
     assert _parse_thresholds([]) == {}
 
@@ -559,7 +566,7 @@ def test_replay_serves_recorded_outputs():
 
 
 def test_replay_runs_agent_logic_for_real():
-    from agentlens import Cassette, replay, SpanKind
+    from agentlens import Cassette, SpanKind, replay
 
     run, calls, _lens, _agent = _record_run()
     cassette = Cassette.from_run(run)
@@ -580,8 +587,8 @@ def test_replay_runs_agent_logic_for_real():
     @lens2.trace("qa_agent")
     def agent_v2(q):
         docs = search(q)
-        seen["docs"] = docs           # today's code, yesterday's data
-        return answer(docs).upper()   # the change under test
+        seen["docs"] = docs  # today's code, yesterday's data
+        return answer(docs).upper()  # the change under test
 
     with replay(cassette):
         result = agent_v2("paris")
@@ -611,7 +618,7 @@ def test_replay_reproduces_recorded_failures():
 
 
 def test_replay_strict_mode_catches_new_calls():
-    from agentlens import Cassette, ReplayMiss, replay, SpanKind
+    from agentlens import Cassette, ReplayMiss, replay
 
     run, _calls, _lens, _agent = _record_run()
     cassette = Cassette.from_run(run)
@@ -623,7 +630,7 @@ def test_replay_strict_mode_catches_new_calls():
     def search(q):
         return {"hits": [], "count": 0}
 
-    @lens2.tool("translate")           # a call the recording never saw
+    @lens2.tool("translate")  # a call the recording never saw
     def translate(text):
         return "live network call"
 
@@ -699,7 +706,7 @@ def test_replay_reports_unused_recordings():
 
     @lens2.trace("agent")
     def agent_v2():
-        return search2("0")   # today's code makes fewer calls
+        return search2("0")  # today's code makes fewer calls
 
     with replay(cassette) as session:
         agent_v2()
@@ -738,17 +745,23 @@ def test_cassette_without_recording_is_marked_truncated():
 def test_divergence_pinpoints_the_first_difference():
     from agentlens import divergence
 
-    original = {"status": "error", "spans": [
-        {"name": "agent", "kind": "agent", "started_at": 1},
-        {"name": "search", "kind": "tool", "started_at": 2},
-        {"name": "answer", "kind": "llm", "started_at": 3},
-    ]}
-    changed = {"status": "success", "spans": [
-        {"name": "agent", "kind": "agent", "started_at": 1},
-        {"name": "search", "kind": "tool", "started_at": 2},
-        {"name": "validate", "kind": "custom", "started_at": 2.5},
-        {"name": "answer", "kind": "llm", "started_at": 3},
-    ]}
+    original = {
+        "status": "error",
+        "spans": [
+            {"name": "agent", "kind": "agent", "started_at": 1},
+            {"name": "search", "kind": "tool", "started_at": 2},
+            {"name": "answer", "kind": "llm", "started_at": 3},
+        ],
+    }
+    changed = {
+        "status": "success",
+        "spans": [
+            {"name": "agent", "kind": "agent", "started_at": 1},
+            {"name": "search", "kind": "tool", "started_at": 2},
+            {"name": "validate", "kind": "custom", "started_at": 2.5},
+            {"name": "answer", "kind": "llm", "started_at": 3},
+        ],
+    }
 
     d = divergence(original, changed)
     assert d["identical"] is False
@@ -765,7 +778,7 @@ def test_replay_rejects_changed_inputs():
     Serving a recorded output for arguments that were never sent is a lie:
     nobody knows what that API or model would have returned.
     """
-    from agentlens import Cassette, InputMismatch, replay, SpanKind
+    from agentlens import Cassette, InputMismatch, SpanKind, replay
 
     run, _calls, _lens, _agent = _record_run()
     cassette = Cassette.from_run(run)
@@ -871,8 +884,9 @@ def test_redaction_policies_and_hash_stability():
     assert r.redact_text("jane@acme.com") != r.redact_text("bob@acme.com")
 
     # a different secret produces different tokens
-    assert Redactor(policies={"email": "hash"}, hash_secret="a").redact_text("j@x.com") != \
-        Redactor(policies={"email": "hash"}, hash_secret="b").redact_text("j@x.com")
+    assert Redactor(policies={"email": "hash"}, hash_secret="a").redact_text("j@x.com") != Redactor(
+        policies={"email": "hash"}, hash_secret="b"
+    ).redact_text("j@x.com")
     print("test_redaction_policies_and_hash_stability ok")
 
 
@@ -890,7 +904,6 @@ def test_redaction_by_field_name():
 
 
 def test_redaction_applies_to_exported_runs():
-    from agentlens import SpanKind
 
     path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
     lens = AgentLens(exporter=FileExporter(path), redact=True)
@@ -1023,6 +1036,7 @@ def test_custom_patterns_take_priority():
 # failure names the assumption that broke.
 # --------------------------------------------------------------------------- #
 
+
 def test_openai_agents_processor_builds_a_run():
     from agentlens.integrations.openai_agents import AgentLensTracingProcessor
 
@@ -1119,7 +1133,7 @@ def test_openai_agents_processor_handles_concurrent_traces():
 
     a, b = Trace("trace_a", "workflow_a"), Trace("trace_b", "workflow_b")
     proc.on_trace_start(a)
-    proc.on_trace_start(b)          # interleaved, as concurrent workflows are
+    proc.on_trace_start(b)  # interleaved, as concurrent workflows are
     for sp in (FakeSpan("trace_a", "1", "step_a"), FakeSpan("trace_b", "2", "step_b")):
         proc.on_span_start(sp)
         proc.on_span_end(sp)
@@ -1148,7 +1162,7 @@ def test_openai_agents_shutdown_exports_open_traces():
         trace_id, name, group_id = "trace_x", "interrupted", None
 
     proc.on_trace_start(Trace())
-    proc.shutdown()   # process exiting mid-trace
+    proc.shutdown()  # process exiting mid-trace
 
     assert len(runs) == 1, "an open trace should not vanish on shutdown"
     assert runs[0]["status"] == "cancelled"
@@ -1229,7 +1243,7 @@ def test_langgraph_records_failures_and_passes_through():
             runs.append(run.to_dict())
 
     class BrokenGraph:
-        node_names = ["a", "b"]      # an attribute the wrapper doesn't know about
+        node_names = ["a", "b"]  # an attribute the wrapper doesn't know about
 
         def stream(self, inputs, config=None, stream_mode=None, **kwargs):
             yield {"classify": {"intent": "x"}}

@@ -18,9 +18,9 @@ from agentlens.otel import MultiExporter, OTLPExporter
 
 lens = AgentLens(
     exporter=MultiExporter(
-        HttpExporter("http://localhost:7430"),          # AgentLens UI
+        HttpExporter("http://localhost:7430"),  # AgentLens UI
         OTLPExporter(
-            "http://localhost:4318",                    # OTel collector
+            "http://localhost:4318",  # OTel collector
             service_name="research-agent",
             # headers={"x-honeycomb-team": "…"},        # or a SaaS backend
         ),

@@ -59,12 +59,12 @@ if __name__ == "__main__":
     lens.exporter.flush()  # make sure the run landed before scoring it
 
     # find the run we just produced, then attach eval scores to it
-    from agentlens.context import current_run  # noqa: F401  (illustrative)
-
     # in a real harness you'd capture run_id from the traced call; here we
     # read the most recent run back from the server
     import json
     import urllib.request
+
+    from agentlens.context import current_run  # noqa: F401  (illustrative)
 
     with urllib.request.urlopen(f"{ENDPOINT}/api/runs?limit=1") as res:
         runs = json.loads(res.read())

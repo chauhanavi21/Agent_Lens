@@ -9,8 +9,10 @@ from sqlalchemy.types import JSON
 
 class Base(DeclarativeBase):
     # JSONB on Postgres, plain JSON elsewhere (SQLite dev mode)
-    type_annotation_map = {dict: JSON().with_variant(JSONB, "postgresql"),
-                           list: JSON().with_variant(JSONB, "postgresql")}
+    type_annotation_map = {
+        dict: JSON().with_variant(JSONB, "postgresql"),
+        list: JSON().with_variant(JSONB, "postgresql"),
+    }
 
 
 class RunRow(Base):

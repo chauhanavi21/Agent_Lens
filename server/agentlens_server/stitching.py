@@ -14,8 +14,6 @@ each service keeps owning its own data.
 
 from __future__ import annotations
 
-from typing import Any
-
 
 def is_child_run(run: dict) -> bool:
     """True when this run is a remote continuation of some other run."""
@@ -52,7 +50,9 @@ def stitch(parent: dict, children: list[dict]) -> dict:
         known.update(s["span_id"] for s in child_spans)
 
     merged["spans"] = spans
-    merged["total_tokens"] = (parent.get("total_tokens") or 0) + sum(c.get("total_tokens") or 0 for c in children)
+    merged["total_tokens"] = (parent.get("total_tokens") or 0) + sum(
+        c.get("total_tokens") or 0 for c in children
+    )
     merged["total_cost_usd"] = round(
         (parent.get("total_cost_usd") or 0.0) + sum(c.get("total_cost_usd") or 0.0 for c in children), 6
     )

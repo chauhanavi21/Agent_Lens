@@ -16,8 +16,8 @@ ENDPOINT = "http://localhost:7430"
 
 def openai_agents_sdk():
     """Register a processor; the SDK's own tracing does the rest."""
-    from agents import Agent, Runner, add_trace_processor           # noqa: F401
     from agentlens.integrations.openai_agents import AgentLensTracingProcessor
+    from agents import Agent, Runner, add_trace_processor  # noqa: F401
 
     lens = AgentLens(endpoint=ENDPOINT)
     add_trace_processor(AgentLensTracingProcessor(lens))
@@ -32,7 +32,7 @@ def langgraph():
     """Wrap the compiled graph; each node becomes a span."""
     from agentlens.integrations.langgraph import trace_graph
 
-    lens = AgentLens(endpoint=ENDPOINT)
+    lens = AgentLens(endpoint=ENDPOINT)  # noqa: F841 - shown for the reader
     # app = trace_graph(lens, graph.compile(), run_name="support_graph")
     # app.invoke({"messages": [...]})
     #
@@ -45,7 +45,7 @@ def pydantic_ai():
     """Wrap the agent; tool functions get wrapped with it."""
     from agentlens.integrations.pydantic_ai import trace_agent
 
-    lens = AgentLens(endpoint=ENDPOINT)
+    lens = AgentLens(endpoint=ENDPOINT)  # noqa: F841 - shown for the reader
     # agent = trace_agent(lens, Agent("openai:gpt-4o", tools=[get_weather]))
     # await agent.run("weather in Lisbon?")
     #
@@ -69,7 +69,7 @@ def crewai():
     """Wrap the crew; each task becomes a span."""
     from agentlens.integrations.crewai import trace_crew
 
-    lens = AgentLens(endpoint=ENDPOINT)
+    lens = AgentLens(endpoint=ENDPOINT)  # noqa: F841 - shown for the reader
     # trace_crew(lens, crew, run_name="research_crew").kickoff(inputs={...})
     return trace_crew
 

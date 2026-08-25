@@ -1,3 +1,5 @@
+import { randomBytes as nodeRandomBytes } from 'node:crypto';
+
 /**
  * Core data model. Kept byte-compatible with the Python SDK's wire format:
  * both write to the same ingest endpoint, and a polyglot system should
@@ -70,10 +72,24 @@ export interface RunData {
 /** Times are seconds-with-fraction, matching Python's time.time(). */
 export const now = (): number => Date.now() / 1000;
 
+/**
+ * Random hex id.
+ *
+ * `globalThis.crypto` is only reliably present from Node 19, and this
+ * package advertises Node 18 — so `node:crypto` is imported statically as
+ * the fallback (a bare `require` would break under ESM). Resolved once at
+ * load rather than per call, since this runs on every span.
+ */
+const getRandomBytes: (n: number) => Uint8Array = (() => {
+  const webcrypto = (globalThis as { crypto?: { getRandomValues?<T extends ArrayBufferView>(a: T): T } }).crypto;
+  if (typeof webcrypto?.getRandomValues === 'function') {
+    return (n: number) => webcrypto.getRandomValues!(new Uint8Array(n));
+  }
+  return (n: number) => new Uint8Array(nodeRandomBytes(n));
+})();
+
 export function randomHex(bytes: number): string {
-  const out = new Uint8Array(bytes);
-  globalThis.crypto.getRandomValues(out);
-  return Array.from(out, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(getRandomBytes(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**

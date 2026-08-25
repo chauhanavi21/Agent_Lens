@@ -18,18 +18,17 @@ from __future__ import annotations
 import functools
 import inspect
 import json
-import traceback
 from typing import Any, Callable, Optional
 
 from . import context as ctx
+from .compat import format_exception
 from .cost import estimate_cost_usd
-from .exporters import Exporter, HttpExporter, ConsoleExporter
+from .exporters import ConsoleExporter, Exporter, HttpExporter
 from .models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 from .redaction import Redactor, build_redactor
 from .replay import (
     REPLAY_ERROR_KEY,
     REPLAY_OUTPUT_KEY,
-    InputMismatch,
     ReplayedError,
     ReplayMiss,
     current_session,
@@ -57,7 +56,7 @@ class AgentLens:
         cost_table: Optional[dict[str, tuple[float, float]]] = None,
         on_budget: str = "raise",  # "raise" | "pause" | "warn"
         record_outputs: bool = False,
-        redact: Any = None,        # True | Redactor | {detector: policy}
+        redact: Any = None,  # True | Redactor | {detector: policy}
         capture_content: bool = True,
     ):
         if exporter is not None:
@@ -189,7 +188,7 @@ class AgentLens:
                     root.finish(SpanStatus.PAUSED, error=str(error))
                     run.finish(SpanStatus.PAUSED, error=str(error))
                 else:
-                    tb = "".join(traceback.format_exception(error)).strip()
+                    tb = format_exception(error)
                     root.finish(SpanStatus.ERROR, error=tb)
                     run.finish(SpanStatus.ERROR, error=str(error))
                 self._emit(span_event(run, root, "span_end"))
@@ -263,7 +262,7 @@ class AgentLens:
                 if error is None:
                     span.finish(SpanStatus.SUCCESS)
                 else:
-                    tb = "".join(traceback.format_exception(error)).strip()
+                    tb = format_exception(error)
                     span.finish(SpanStatus.ERROR, error=tb)
                     self._record_output(span, None, error)
                 run = ctx.current_run()
@@ -363,16 +362,22 @@ class AgentLens:
                 meta = LLMMetadata(model=model, provider=provider)
                 prompt = kwargs.get("prompt") or (args[0] if args else "")
                 meta.prompt_preview = _preview(prompt)
-                usage = getattr(result, "usage", None) or (result.get("usage") if isinstance(result, dict) else None)
+                usage = getattr(result, "usage", None) or (
+                    result.get("usage") if isinstance(result, dict) else None
+                )
                 if usage is not None:
                     get = (lambda k: getattr(usage, k, None)) if not isinstance(usage, dict) else usage.get
                     meta.input_tokens = int(get("prompt_tokens") or get("input_tokens") or 0)
                     meta.output_tokens = int(get("completion_tokens") or get("output_tokens") or 0)
-                rmodel = getattr(result, "model", None) or (result.get("model") if isinstance(result, dict) else None)
+                rmodel = getattr(result, "model", None) or (
+                    result.get("model") if isinstance(result, dict) else None
+                )
                 if rmodel:
                     meta.model = str(rmodel)
                 meta.response_preview = _preview(result)
-                meta.cost_usd = estimate_cost_usd(meta.model, meta.input_tokens, meta.output_tokens, self.cost_table)
+                meta.cost_usd = estimate_cost_usd(
+                    meta.model, meta.input_tokens, meta.output_tokens, self.cost_table
+                )
                 span.llm = meta
                 self._check_budget()
 

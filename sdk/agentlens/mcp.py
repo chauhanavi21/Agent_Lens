@@ -24,12 +24,10 @@ from __future__ import annotations
 
 import functools
 import inspect
-import time
-import traceback
-import uuid
 from typing import Any, Callable, Optional
 
 from . import context as ctx
+from .compat import format_exception
 from .models import AgentRun, Span, SpanKind, SpanStatus, _preview
 
 TRACEPARENT_VERSION = "00"
@@ -39,6 +37,7 @@ SAMPLED = "01"
 # --------------------------------------------------------------------------- #
 # W3C trace context
 # --------------------------------------------------------------------------- #
+
 
 def format_traceparent(trace_id: str, span_id: str, sampled: bool = True) -> str:
     """00-{32 hex trace id}-{16 hex parent span id}-{flags}"""
@@ -101,6 +100,7 @@ def extract_context(arguments: Optional[dict] = None) -> Optional[dict[str, Any]
 # agent side: wrap an MCP client session
 # --------------------------------------------------------------------------- #
 
+
 class TracedMCPSession:
     """
     Wraps an MCP ClientSession so every tool call becomes an MCP span with
@@ -135,11 +135,13 @@ class TracedMCPSession:
             kind=SpanKind.MCP,
             parent_id=parent.span_id if parent else None,
         )
-        span.attributes.update({
-            "mcp.method.name": method,
-            "mcp.server.name": self._server_name,
-            "mcp.transport": getattr(self._session, "transport", "") or "",
-        })
+        span.attributes.update(
+            {
+                "mcp.method.name": method,
+                "mcp.server.name": self._server_name,
+                "mcp.transport": getattr(self._session, "transport", "") or "",
+            }
+        )
         if tool_name:
             span.attributes["mcp.tool.name"] = tool_name
         span.inputs = _preview(args)
@@ -148,7 +150,7 @@ class TracedMCPSession:
 
     def _close(self, span: Span, token, result: Any, error: Optional[BaseException]) -> None:
         if error is not None:
-            span.finish(SpanStatus.ERROR, error="".join(traceback.format_exception(error)).strip())
+            span.finish(SpanStatus.ERROR, error=format_exception(error))
         else:
             # MCP signals tool failure in the payload, not by raising
             is_error = bool(
@@ -226,6 +228,7 @@ def trace_mcp_session(lens, session: Any, server_name: str = "mcp") -> TracedMCP
 # server side: record what the tool actually did
 # --------------------------------------------------------------------------- #
 
+
 def mcp_server_span(
     lens,
     server_name: str = "mcp-server",
@@ -255,11 +258,13 @@ def mcp_server_span(
                 run.metadata["caller_run_id"] = incoming.get("run_id")
             root = Span(name=name, kind=SpanKind.MCP, service=server_name)
             root.remote_parent_id = incoming["parent_span_id"] if incoming else None
-            root.attributes.update({
-                "mcp.tool.name": name,
-                "mcp.server.name": server_name,
-                "mcp.side": "server",
-            })
+            root.attributes.update(
+                {
+                    "mcp.tool.name": name,
+                    "mcp.server.name": server_name,
+                    "mcp.side": "server",
+                }
+            )
             run.spans.append(root)
             return run, root
 
@@ -269,7 +274,7 @@ def mcp_server_span(
                 root.finish(SpanStatus.SUCCESS)
                 run.finish(SpanStatus.SUCCESS)
             else:
-                tb = "".join(traceback.format_exception(error)).strip()
+                tb = format_exception(error)
                 root.finish(SpanStatus.ERROR, error=tb)
                 run.finish(SpanStatus.ERROR, error=str(error))
             ctx.reset_span(st)

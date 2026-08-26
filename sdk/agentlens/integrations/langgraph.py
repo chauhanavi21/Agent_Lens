@@ -20,10 +20,10 @@ it up. Anything not listed passes straight through to the graph.
 
 from __future__ import annotations
 
-import traceback
 from typing import Any, Optional
 
 from .. import context as ctx
+from ..compat import format_exception
 from ..models import AgentRun, Span, SpanKind, SpanStatus, _preview
 
 
@@ -70,7 +70,7 @@ class TracedGraph:
             root.finish(SpanStatus.SUCCESS)
             run.finish(SpanStatus.SUCCESS)
         else:
-            root.finish(SpanStatus.ERROR, error="".join(traceback.format_exception(error)).strip())
+            root.finish(SpanStatus.ERROR, error=format_exception(error))
             run.finish(SpanStatus.ERROR, error=str(error))
         ctx.reset_span(st)
         ctx.reset_run(rt)

@@ -24,10 +24,10 @@ shows up as its own node rather than being hidden inside the model step.
 from __future__ import annotations
 
 import inspect
-import traceback
 from typing import Any, Optional
 
 from .. import context as ctx
+from ..compat import format_exception
 from ..cost import estimate_cost_usd
 from ..models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 
@@ -121,7 +121,7 @@ class TracedAgent:
             root.finish(SpanStatus.SUCCESS)
             run.finish(SpanStatus.SUCCESS)
         else:
-            root.finish(SpanStatus.ERROR, error="".join(traceback.format_exception(error)).strip())
+            root.finish(SpanStatus.ERROR, error=format_exception(error))
             run.finish(SpanStatus.ERROR, error=str(error))
 
         ctx.reset_span(st)

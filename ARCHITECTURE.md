@@ -124,6 +124,22 @@ Every package it drags in is a version conflict waiting to happen in a
 codebase that already has strong opinions about `httpx` or `pydantic`. The
 cost is a few hundred lines of protocol code, paid once.
 
+### 4.1a Supporting an old Python is a claim, not a hope
+
+The SDK advertises 3.9, which means `traceback.format_exception(exc)` — the
+single-argument form added in 3.10 — is off limits. `agentlens/compat.py`
+handles both signatures.
+
+That shim was added when the CI matrix was written, and it still shipped
+broken: the framework integrations, written in a later session, called the
+stdlib directly and the 3.9 matrix leg failed on push. A linter can't see
+this, because the arity change is a stdlib signature difference rather than
+syntax — `vermin` reports the package as 3.8-compatible either way.
+
+So the enforcement is a test that scans the package source for direct calls
+and names the offending files. A shim nothing enforces is a shim someone
+forgets.
+
 ### 4.2 Tracing must never break the traced agent
 
 This is the invariant everything else bends around:
@@ -436,6 +452,9 @@ Being honest about these matters more than the feature list:
 - **Design cassettes before shipping `outputs` as previews.** Replay ended
   up needing a parallel storage path (`record_outputs`) that a slightly
   different initial data model would have avoided.
+- **Enforce compatibility shims at the point they're added.** The 3.9 shim
+  and the test that guards it should have landed in the same commit; instead
+  the gap was found by CI two sessions later.
 - **Write this document sooner.** Several decisions here — read-time
   stitching, SDK-side redaction, relative regression — were only articulated
   properly when I wrote them down, and one (the `service` field naming the

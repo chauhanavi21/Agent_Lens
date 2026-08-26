@@ -496,11 +496,21 @@ def test_ci_threshold_parsing():
 
 
 def test_ci_unreachable_server_is_an_error_not_a_pass():
+    import contextlib
+    import io
+
     from agentlens.ci import EXIT_ERROR, main
 
-    # nothing is listening on port 9; a build must not read this as clean
-    code = main(["--endpoint", "http://127.0.0.1:9", "gate", "--candidate-tag", "pr-1"])
+    # The CLI prints a connection error, which is the point — but an
+    # alarming-looking message in a passing CI log costs someone a minute
+    # every time they read it, so capture it and assert on it instead.
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        # nothing is listening on port 9; a build must not read this as clean
+        code = main(["--endpoint", "http://127.0.0.1:9", "gate", "--candidate-tag", "pr-1"])
+
     assert code == EXIT_ERROR, code
+    assert "could not reach" in stderr.getvalue()
     print("test_ci_unreachable_server_is_an_error_not_a_pass ok")
 
 
@@ -1382,7 +1392,52 @@ def test_pydantic_ai_records_failures():
     print("test_pydantic_ai_records_failures ok")
 
 
+def test_no_module_calls_format_exception_directly():
+    """
+    Guard for a trap that already bit once.
+
+    `traceback.format_exception(exc)` is 3.10+; on 3.9 it needs the
+    (type, value, tb) triple. `agentlens.compat.format_exception` handles
+    both — but a shim nothing enforces is a shim someone forgets, which is
+    exactly what happened when the framework integrations were written in a
+    later session and CI caught it on the 3.9 matrix leg.
+
+    A linter can't see this: the arity change is a stdlib signature
+    difference, not syntax. So it's checked here instead.
+    """
+    import pathlib
+
+    package = pathlib.Path(__file__).parent / "agentlens"
+    offenders = []
+    for path in package.rglob("*.py"):
+        if path.name == "compat.py":
+            continue
+        if "traceback.format_exception(" in path.read_text(encoding="utf-8"):
+            offenders.append(str(path.relative_to(package)))
+
+    assert not offenders, (
+        "these modules call traceback.format_exception directly and will break "
+        f"on Python 3.9 — use agentlens.compat.format_exception instead: {offenders}"
+    )
+    print("test_no_module_calls_format_exception_directly ok")
+
+
+def test_compat_format_exception_matches_the_stdlib():
+    from agentlens.compat import format_exception
+
+    try:
+        raise ValueError("boom")
+    except ValueError as e:
+        rendered = format_exception(e)
+
+    assert rendered.splitlines()[-1] == "ValueError: boom"
+    assert "Traceback (most recent call last)" in rendered
+    print("test_compat_format_exception_matches_the_stdlib ok")
+
+
 if __name__ == "__main__":
+    test_no_module_calls_format_exception_directly()
+    test_compat_format_exception_matches_the_stdlib()
     test_basic_dag()
     test_error_and_retry()
     test_budget_guard()

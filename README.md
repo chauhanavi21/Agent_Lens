@@ -15,6 +15,8 @@
 
 [Architecture & design decisions →](ARCHITECTURE.md)
 
+<img src="assets/architecture.svg" alt="AgentLens architecture: agent process and MCP tool server emitting to the AgentLens server, which stores runs in Postgres, mirrors them to OTel backends, and serves the UI over REST and SSE" width="100%">
+
 </div>
 
 ---
@@ -93,10 +95,30 @@ docker compose up
 - Server: `http://localhost:7430`
 - UI: `http://localhost:5173`
 
-Try it immediately: `python examples/demo_agent.py` sends two runs (one clean,
-one with retries and a failure) so you can explore the DAG and diff views.
+### 3. Fill it with something to look at
 
-### 3. What you'll see
+An empty observability tool is impossible to evaluate, so there's a seeder:
+
+```bash
+python scripts/seed_demo.py          # ~45 runs across a week
+python scripts/seed_demo.py --live   # then stream one in real time
+```
+
+That gives you three agents with different shapes, real failure modes
+(retries, rate limits, budget pauses), an MCP trace stitched across two
+processes, alert rules that have already fired, and a deliberate quality
+regression in the last third of the window — so the Quality tab shows a
+real downward trend and this actually fails:
+
+```bash
+python -m agentlens.ci gate --candidate-tag pr-118 --baseline-tag main \
+  --threshold faithfulness=0.85 --max-regression 0.03
+```
+
+Everything it generates is synthetic — no API keys, no calls to model
+providers. For a single traced run instead, `python examples/demo_agent.py`.
+
+### 4. What you'll see
 
 - **Runs sidebar** — every agent run, filterable by status and name, live-polling
 - **DAG view** — the execution tree, color-coded by span kind, error and retry
@@ -597,36 +619,11 @@ stitching happens at read time, why the CI gate checks relative regression,
 why redaction runs SDK-side — are written up in
 **[ARCHITECTURE.md](ARCHITECTURE.md)**, along with known limitations.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Your Agent Code                       │
-│   @lens.trace / lens.trace()  ·  Python + TypeScript      │
-└─────────────────┬───────────────────────────────────────┘
-                  │  AgentRun JSON (background thread)
-                  ▼
-┌─────────────────────────────────────────────────────────┐
-│              AgentLens Server (FastAPI)                  │
-│  POST /api/ingest/run                                    │
-│  GET  /api/runs   GET /api/runs/:id   POST /api/runs/diff│
-│  (runs/:id stitches remote MCP spans into one DAG)       │
-│  POST /api/ingest/scores  POST /api/ingest/otlp          │
-│  POST /api/ingest/event   GET  /api/stream (SSE)         │
-│  POST /api/evals/judge    POST /api/evals/gate           │
-│  GET  /api/runs/scores                                   │
-│  CRUD /api/alerts/rules   GET /api/alerts/events         │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-        ┌─────────┴──────────┐
-        │     PostgreSQL      │
-        │   runs (JSONB +     │
-        │    GIN index)       │
-        └─────────┬──────────┘
-                  │
-┌─────────────────┴───────────────────────────────────────┐
-│                 AgentLens UI (React + D3)                │
-│  live DAG · timeline · diff · quality · alerts           │
-└─────────────────────────────────────────────────────────┘
-```
+<img src="assets/architecture.svg" alt="AgentLens architecture" width="100%">
+
+Three processes, deliberately. The SDK must be safe to embed in anything;
+the server owns storage and cross-run analysis; the UI is a plain client of
+the API, so everything it does is scriptable.
 
 ## Self-hosting
 
@@ -676,6 +673,76 @@ across 3.10–3.13 and against real Postgres, the TypeScript SDK on Node
 18/20/22, a cross-language wire-compatibility check, the UI build, lint, and
 both Docker images. Releases publish to PyPI via trusted publishing and to
 npm with provenance — no long-lived tokens in either.
+
+## Performance
+
+"How much does tracing cost?" is the first question worth asking an
+observability SDK, so there's a suite that answers it:
+
+```bash
+python scripts/benchmark.py
+```
+
+Measured on one core, Python 3.12, median of seven batches with GC disabled
+during timing:
+
+| Case | Median | Added | Share of one 800ms LLM call |
+| --- | ---: | ---: | ---: |
+| Untraced function call (baseline) | 1.2µs | — | — |
+| Decorated, no active run | 1.5µs | +0.2µs | 0.0000% |
+| Run with 1 span | 22µs | +21µs | 0.0026% |
+| Run with 6 spans | 78µs | +77µs | 0.0096% |
+| Run with 1 LLM span | 45µs | +44µs | 0.0055% |
+| 2 spans + redaction | 120µs | +119µs | 0.0149% |
+
+**~13µs per span**, ~560 bytes per span held until export, and **12,600
+runs/sec** (75,900 spans/sec) sustained on a single core. Export runs on a
+background thread and is excluded — these are what the agent's own thread
+pays.
+
+The comparison that matters is the last column. Overhead as a percentage of
+a 1.2µs no-op reads like a catastrophe and means nothing; against the work
+an agent actually does between spans, a fully traced six-span run costs
+about a hundredth of a percent of one model call.
+
+### What optimization actually taught me
+
+Redaction dominated the export path at ~50µs per string. Two attempts:
+
+- **Combining all 13 detectors into one regex alternation** — no measurable
+  gain, so it was reverted. It was added complexity buying nothing.
+- **A trigger-character pre-filter** — every built-in detector's matches
+  contain a digit, an `@`, or one of a few literals, so one cheap check up
+  front lets ordinary prose skip every detector. **56µs → 4µs**, a 12x win
+  on the common case.
+
+The pre-filter is only sound because that over-approximation holds, so
+there's a test asserting every secret type contains a trigger hint, and
+custom patterns disable the fast path rather than being guessed at. A
+performance optimization that silently becomes a data leak is the worst
+possible trade.
+
+## Releases
+
+Every package is versioned together — they share a wire format, and letting
+them drift would mean maintaining a compatibility matrix. `scripts/release.py`
+keeps the seven version strings in sync and CI fails a pull request if they
+disagree.
+
+```bash
+python scripts/release.py check      # do all seven agree?
+python scripts/release.py bump 0.4.0 # set them together
+python scripts/release.py plan 0.4.0 # the release checklist
+```
+
+Publishing a GitHub release triggers PyPI (trusted publishing) and npm
+(with provenance). See [CHANGELOG.md](CHANGELOG.md).
+
+## Security
+
+Redaction bypasses and ingest auth issues are the areas most worth
+scrutiny — see [SECURITY.md](SECURITY.md), which also lists the limitations
+that are deliberate (single shared token, best-effort pattern matching).
 
 ## Contributing
 

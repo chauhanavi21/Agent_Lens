@@ -402,6 +402,35 @@ your own code where a simpler path exists is usually right.
 
 ---
 
+## 11a. Performance
+
+The SDK is on the hot path of the thing it observes, so the cost is
+measured rather than asserted: `scripts/benchmark.py` reports ~13µs per
+span, ~560 bytes per span retained until export, and ~12,600 traced runs/sec
+on one core. Export is on a background thread and excluded.
+
+Two things that decision-making taught me:
+
+**Framing matters as much as measurement.** Reporting overhead against a
+1.2µs no-op produces numbers like "+6183%", which is true and useless. The
+honest denominator is the work an agent does between spans — against one
+800ms model call, a six-span traced run costs 0.01%.
+
+**Two optimizations, one kept.** Merging the redaction detectors into a
+single regex alternation produced no measurable gain and was reverted;
+keeping complexity that buys nothing is worse than not trying. A
+trigger-character pre-filter took digit-free prose from 56µs to 4µs and was
+kept — but only because every built-in detector's matches provably contain
+a trigger hint. That soundness condition is tested per secret type, and
+custom patterns disable the fast path rather than having their trigger
+characters guessed at. An optimization that turns into a data leak is the
+worst possible trade.
+
+`server/tests/test_performance.py` holds loose ceilings — several times the
+measured values, since CI runners are noisy — to catch order-of-magnitude
+regressions, plus a weak-reference check that the tracer doesn't retain
+finished runs.
+
 ## 12. Testing strategy
 
 51 Python tests, 16 TypeScript tests, plus end-to-end suites per subsystem.

@@ -94,6 +94,13 @@ jobs:
         working-directory: server
         run: python -m pytest tests -q
 
+      - name: Benchmark smoke run
+        # Not a gate — runner timings are too noisy to assert on. This just
+        # proves the suite still runs, and puts the numbers in the log so a
+        # regression is visible to anyone reading it.
+        if: matrix.python == '3.12'
+        run: python scripts/benchmark.py --quick
+
   server-postgres:
     name: Server against real Postgres
     runs-on: ubuntu-latest
@@ -255,6 +262,12 @@ jobs:
         uses: astral-sh/ruff-action@v3
         with:
           args: format --check .
+
+      - name: Version strings agree
+        # Seven files carry the version. The publish workflows reject a tag
+        # that disagrees with the package, so catching drift on a pull
+        # request is much cheaper than catching it mid-release.
+        run: python scripts/release.py check
 
   docker:
     name: Docker images build

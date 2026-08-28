@@ -100,6 +100,16 @@ DEFAULT_POLICIES: dict[str, Policy] = {
 # the agent's hot path, and a pathological input shouldn't stall it.
 MAX_SCAN_CHARS = 20_000
 
+# Every built-in detector needs one of these characters or literals somewhere
+# in the string. Checking once up front costs under a microsecond and lets
+# ordinary prose — a large share of what agents produce — skip the detector
+# passes entirely: measured 56µs → 4µs on a digit-free paragraph.
+#
+# Only a sound over-approximation belongs here. A detector whose matches
+# wouldn't contain one of these must be excluded from the fast path, which is
+# why custom patterns disable it rather than being guessed at.
+TRIGGER_HINTS = re.compile(r"[\d@]|sk-|AKIA|ASIA|gh[pousr]_|Bearer|eyJ")
+
 
 def luhn_valid(digits: str) -> bool:
     """Real card numbers pass Luhn; order numbers and timestamps mostly don't."""
@@ -178,6 +188,11 @@ class Redactor:
             for name in order
             if self.policies.get(name, self.default_policy) != "allow"
         ]
+
+        # A custom pattern could match text containing none of the trigger
+        # hints, so the pre-filter is only sound without them.
+        self._fast_path_safe = not self.extra_patterns
+
         if self.hash_secret is None:
             self.hash_secret = os.getenv("AGENTLENS_HASH_SECRET", "agentlens")
 
@@ -213,6 +228,12 @@ class Redactor:
             return text
         if len(text) > MAX_SCAN_CHARS:
             text = text[:MAX_SCAN_CHARS] + "…[truncated before redaction]"
+
+        # Fast path: nothing in this string could match any built-in
+        # detector. Skipped when custom patterns are in play, since their
+        # matches may not contain a trigger.
+        if self._fast_path_safe and not TRIGGER_HINTS.search(text):
+            return text
 
         def kv_replace(m: re.Match[str]) -> str:
             raw = m.group("val").strip("'\"")

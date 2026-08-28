@@ -22,7 +22,7 @@ from .replay import Cassette, InputMismatch, ReplayedError, ReplayMiss, divergen
 from .streaming import StreamExporter
 from .tracer import AgentLens, BudgetExceeded, tool, trace
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "AgentLens",
     "AgentRun",

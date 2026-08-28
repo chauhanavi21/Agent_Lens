@@ -1,6 +1,6 @@
 {
   "name": "@agentlens/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open source observability runtime for AI agents: execution DAGs, run diffing, budget guards.",
   "license": "Apache-2.0",
   "type": "module",

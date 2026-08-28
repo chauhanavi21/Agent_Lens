@@ -11,7 +11,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
-    "sqlalchemy>=2.0",
+    "sqlalchemy>=2.0.52",
     "asyncpg>=0.29",
     "aiosqlite>=0.20",
     "pydantic>=2.6",

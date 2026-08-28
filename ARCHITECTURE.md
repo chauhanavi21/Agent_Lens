@@ -433,8 +433,8 @@ finished runs.
 
 ## 12. Testing strategy
 
-51 Python tests, 16 TypeScript tests, plus end-to-end suites per subsystem.
-Three things they deliberately cover:
+51 Python SDK tests, 82 server tests, 16 TypeScript SDK tests, and 56 UI
+tests. Three things they deliberately cover:
 
 1. **Adversarial infrastructure.** Hostile exporters, broken redactors, dead
    ports, malformed OTLP. The assertion is always that the *agent* still
@@ -445,6 +445,13 @@ Three things they deliberately cover:
 3. **Negative cases.** Redaction leaving ordinary text alone. The gate
    failing on a missing metric. Replay refusing changed inputs. Most of the
    real bugs surfaced here rather than in happy-path tests.
+
+The UI suite runs entirely in demo mode with `fetch` stubbed to reject, so a
+component reaching for the network fails loudly instead of hanging — and the
+tests double as a check that the offline experience works with no server.
+The SSE hook is driven by a fake `EventSource`, since jsdom has none; the
+setup file installs a throwing stub so a test that needs one and forgets to
+provide it fails rather than silently skipping the streaming path.
 
 Two harness lessons: httpx's ASGI transport buffers streamed responses, so
 SSE has to be tested against a real uvicorn server; and `node --test` needs
@@ -471,6 +478,9 @@ Being honest about these matters more than the feature list:
   They pin my understanding of each interface, which is not the same as
   pinning the interface.
 - **The UI has no pagination.** It will struggle past a few hundred runs.
+- **No end-to-end browser test.** The UI suite runs in jsdom against demo
+  data; nothing exercises a real browser against a real server, so a
+  breakage in the actual SSE transport or CORS setup would not be caught.
 
 ---
 

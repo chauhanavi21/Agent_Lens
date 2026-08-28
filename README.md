@@ -670,8 +670,12 @@ make up          # docker compose: postgres + server + UI
 
 CI runs the Python SDK across 3.9–3.13 (plus macOS and Windows), the server
 across 3.10–3.13 and against real Postgres, the TypeScript SDK on Node
-18/20/22, a cross-language wire-compatibility check, the UI build, lint, and
-both Docker images. Releases publish to PyPI via trusted publishing and to
+18/20/22, the UI test suite and build on Node 20/22, a cross-language
+wire-compatibility check, lint, and both Docker images.
+
+Test counts: **51** Python SDK, **82** server, **16** TypeScript SDK, and
+**56** UI — the last of which run entirely in demo mode, so they double as a
+check that the offline experience works with no server at all. Releases publish to PyPI via trusted publishing and to
 npm with provenance — no long-lived tokens in either.
 
 ## Performance

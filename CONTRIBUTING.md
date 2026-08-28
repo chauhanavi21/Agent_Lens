@@ -36,6 +36,16 @@ from, and the known limitations worth working on.
 - Framework adapters read objects by duck typing and are tested against
   fakes of the documented interface. Don't import a framework's types.
 
+## The UI
+
+```bash
+cd ui && npm install && npm test     # vitest + testing-library, jsdom
+```
+
+Tests run against demo mode with `fetch` stubbed to reject, so anything that
+reaches for the network fails loudly rather than hanging. The SSE hook is
+driven by a fake `EventSource`.
+
 ## The TypeScript SDK
 
 ```bash

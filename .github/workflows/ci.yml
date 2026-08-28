@@ -225,20 +225,28 @@ jobs:
         run: python scripts/interop_check.py
 
   ui:
-    name: UI build
+    name: UI (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
       - name: Install
         working-directory: ui
         run: npm ci || npm install
+
+      - name: Test
+        working-directory: ui
+        run: npm test
 
       - name: Build
         working-directory: ui

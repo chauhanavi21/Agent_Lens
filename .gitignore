@@ -12,3 +12,6 @@ sdk-ts/node_modules/
 # tooling caches
 .ruff_cache/
 .pytest_cache/
+
+# vitest
+ui/coverage/

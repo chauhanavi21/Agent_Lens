@@ -1,4 +1,4 @@
-.PHONY: help install test test-sdk test-server test-ts lint fmt interop bench demo demo-live version release up down clean
+.PHONY: help install test test-sdk test-server test-ts test-ui lint fmt interop bench demo demo-live version release up down clean
 
 help:  ## Show this help
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -9,7 +9,7 @@ install:  ## Install everything for local development
 	cd sdk-ts && npm install
 	cd ui && npm install
 
-test: test-sdk test-server test-ts interop  ## Run every test suite
+test: test-sdk test-server test-ts test-ui interop  ## Run every test suite
 
 test-sdk:  ## Python SDK tests
 	cd sdk && python test_sdk.py
@@ -19,6 +19,9 @@ test-server:  ## Server tests
 
 test-ts:  ## TypeScript SDK tests
 	cd sdk-ts && npm test
+
+test-ui:  ## UI component tests
+	cd ui && npm test
 
 bench:  ## Measure tracing overhead
 	python scripts/benchmark.py

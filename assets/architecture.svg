@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 560" width="880" height="560" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <style>
+    .bg      { fill: #0c0f14; }
+    .box     { fill: #171c26; stroke: #232a38; stroke-width: 1.2; }
+    .box-alt { fill: #12161e; stroke: #232a38; stroke-width: 1.2; }
+    .title   { fill: #dbe2ee; font-size: 14px; font-weight: 600; }
+    .label   { fill: #dbe2ee; font-size: 12px; }
+    .dim     { fill: #8b94a7; font-size: 11px; }
+    .mono    { font-family: ui-monospace, 'IBM Plex Mono', monospace; font-size: 10.5px; fill: #8b94a7; }
+    .edge    { stroke: #2f3849; stroke-width: 1.6; fill: none; }
+    .edge-l  { stroke: #5eb0ff; stroke-width: 1.6; fill: none; }
+    .accent  { fill: #5eb0ff; }
+    .ok      { fill: #3ecf8e; }
+    .llm     { fill: #b48bff; }
+    .mcp     { fill: #ff9db0; }
+    .warn    { fill: #f4b64f; }
+  </style>
+
+  <rect class="bg" width="880" height="560" rx="10"/>
+
+  <!-- header -->
+  <text x="32" y="40" class="title" font-size="17">◉ AgentLens</text>
+  <text x="140" y="40" class="dim">observability runtime for AI agents</text>
+
+  <!-- agent process -->
+  <rect class="box" x="32" y="66" width="380" height="150" rx="9"/>
+  <text x="50" y="90" class="title">Agent process</text>
+  <text x="50" y="112" class="mono">@lens.trace  @lens.span  @lens.tool  @lens.llm_call</text>
+  <text x="50" y="130" class="mono">lens.trace(name, fn)          TypeScript</text>
+  <line x1="50" y1="144" x2="394" y2="144" class="edge"/>
+  <circle cx="56" cy="163" r="3" class="accent"/>
+  <text x="68" y="167" class="dim">context propagation · contextvars / AsyncLocalStorage</text>
+  <circle cx="56" cy="185" r="3" class="ok"/>
+  <text x="68" y="189" class="dim">redaction, then export — off the hot path</text>
+  <circle cx="56" cy="205" r="3" class="warn"/>
+  <text x="68" y="209" class="dim">budget guards stop runaway loops</text>
+
+  <!-- MCP tool server -->
+  <rect class="box-alt" x="452" y="66" width="200" height="150" rx="9"/>
+  <text x="470" y="90" class="title">MCP tool server</text>
+  <text x="470" y="112" class="mono">@mcp_server_span</text>
+  <text x="470" y="130" class="mono" fill="#5eb0ff">W3C traceparent in _meta</text>
+  <circle cx="476" cy="156" r="3" class="mcp"/>
+  <text x="488" y="160" class="dim">own process, own run</text>
+  <circle cx="476" cy="178" r="3" class="mcp"/>
+  <text x="488" y="182" class="dim">shared trace id</text>
+  <circle cx="476" cy="200" r="3" class="mcp"/>
+  <text x="488" y="204" class="dim">stitched on read</text>
+
+  <!-- trace context arrow -->
+  <path d="M412 140 L452 140" class="edge-l" marker-end="url(#arrow-blue)"/>
+
+  <!-- any OTel SDK -->
+  <rect class="box-alt" x="692" y="66" width="156" height="150" rx="9"/>
+  <text x="710" y="90" class="title">Any OTel SDK</text>
+  <text x="710" y="112" class="mono">gen_ai.* spans</text>
+  <text x="710" y="140" class="dim">LangChain,</text>
+  <text x="710" y="158" class="dim">Logfire, or your</text>
+  <text x="710" y="176" class="dim">own collector</text>
+
+  <!-- arrows down to server -->
+  <path d="M222 216 L222 262" class="edge" marker-end="url(#arrow)"/>
+  <text x="232" y="243" class="mono">run JSON · span events</text>
+  <path d="M552 216 L552 262" class="edge" marker-end="url(#arrow)"/>
+  <text x="562" y="243" class="mono">server run</text>
+  <path d="M770 216 L770 240 L680 240 L680 262" class="edge" marker-end="url(#arrow)"/>
+  <text x="690" y="232" class="mono">OTLP</text>
+
+  <!-- server -->
+  <rect class="box" x="32" y="262" width="816" height="118" rx="9"/>
+  <text x="50" y="286" class="title">Server</text>
+  <text x="104" y="286" class="dim">FastAPI</text>
+
+  <rect class="box-alt" x="50" y="300" width="188" height="62" rx="7"/>
+  <text x="64" y="320" class="label">Ingest</text>
+  <text x="64" y="338" class="mono">/ingest/run · /event</text>
+  <text x="64" y="353" class="mono">/ingest/otlp · /scores</text>
+
+  <rect class="box-alt" x="250" y="300" width="188" height="62" rx="7"/>
+  <text x="264" y="320" class="label">Read-time stitching</text>
+  <text x="264" y="338" class="mono">grafts remote spans</text>
+  <text x="264" y="353" class="mono">into one DAG</text>
+
+  <rect class="box-alt" x="450" y="300" width="188" height="62" rx="7"/>
+  <text x="464" y="320" class="label">Analysis</text>
+  <text x="464" y="338" class="mono">diff · judge · gate</text>
+  <text x="464" y="353" class="mono">alert rules</text>
+
+  <rect class="box-alt" x="650" y="300" width="180" height="62" rx="7"/>
+  <text x="664" y="320" class="label">Live</text>
+  <text x="664" y="338" class="mono">in-memory store</text>
+  <text x="664" y="353" class="mono">SSE broker</text>
+
+  <!-- storage + otel out -->
+  <path d="M180 380 L180 420" class="edge" marker-end="url(#arrow)"/>
+  <rect class="box" x="70" y="420" width="220" height="72" rx="9"/>
+  <text x="88" y="444" class="title">PostgreSQL</text>
+  <text x="88" y="464" class="mono">runs (JSONB + GIN)</text>
+  <text x="88" y="481" class="dim">read whole, one row per run</text>
+
+  <path d="M740 380 L740 420" class="edge" marker-end="url(#arrow)"/>
+  <rect class="box" x="620" y="420" width="210" height="72" rx="9"/>
+  <text x="638" y="444" class="title">OTel backends</text>
+  <text x="638" y="464" class="mono">Tempo · Honeycomb</text>
+  <text x="638" y="481" class="dim">dual-emit gen_ai.* + agentlens.*</text>
+
+  <!-- UI -->
+  <path d="M420 380 L420 420" class="edge-l" marker-end="url(#arrow-blue)"/>
+  <text x="430" y="404" class="mono" fill="#5eb0ff">REST + SSE</text>
+  <rect class="box" x="320" y="420" width="272" height="72" rx="9"/>
+  <text x="338" y="444" class="title">UI</text>
+  <text x="368" y="444" class="dim">React + D3</text>
+  <text x="338" y="466" class="mono">live DAG · timeline · span drawer</text>
+  <text x="338" y="482" class="mono">diff · quality trends · alerts</text>
+
+  <!-- footer legend -->
+  <circle cx="42" cy="524" r="4" class="accent"/>
+  <text x="54" y="528" class="dim">agent</text>
+  <circle cx="112" cy="524" r="4" class="llm"/>
+  <text x="124" y="528" class="dim">llm</text>
+  <circle cx="166" cy="524" r="4" class="ok"/>
+  <text x="178" y="528" class="dim">tool</text>
+  <circle cx="226" cy="524" r="4" class="warn"/>
+  <text x="238" y="528" class="dim">retrieval</text>
+  <circle cx="308" cy="524" r="4" class="mcp"/>
+  <text x="320" y="528" class="dim">mcp</text>
+  <text x="848" y="528" class="mono" text-anchor="end">Python + TypeScript SDKs · one wire format · Apache 2.0</text>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f3849"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5eb0ff"/>
+    </marker>
+  </defs>
+</svg>

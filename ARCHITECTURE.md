@@ -431,6 +431,34 @@ measured values, since CI runners are noisy — to catch order-of-magnitude
 regressions, plus a weak-reference check that the tracer doesn't retain
 finished runs.
 
+## 11b. Data lifecycle
+
+Retention is off by default. An observability store that silently deletes
+data is worse than one that grows, so enabling it has to be deliberate, and
+the ad-hoc endpoint defaults to a dry run.
+
+Three decisions worth defending:
+
+**Count limits are per agent.** A global "keep the last N runs" lets a
+chatty agent evict a quiet one entirely — and the quiet one is usually what
+you're debugging.
+
+**Deletion follows a trace forward, never backward.** Removing an agent run
+takes the MCP server runs stitched into it, because an orphaned server run
+surfaces as a top-level run nobody recognizes. Removing a *server* run never
+touches its caller: that direction would let routine cleanup of a tool
+server destroy the agent traces referencing it.
+
+**Cursor pagination, not offsets.** Runs arrive at the head continuously, so
+an offset shifts under the reader and produces duplicate rows. A cursor on
+`started_at` is stable regardless of what lands mid-scroll.
+
+The background sweep is deliberately uncoordinated — several replicas each
+sweep, and the loser of a race deletes nothing because the rows are already
+gone. It runs shortly after startup rather than one interval later, since a
+server restarting every few hours would otherwise never reach its first
+sweep.
+
 ## 12. Testing strategy
 
 51 Python SDK tests, 82 server tests, 16 TypeScript SDK tests, and 56 UI
@@ -477,7 +505,8 @@ Being honest about these matters more than the feature list:
 - **Framework adapters are tested against fakes, not the real libraries.**
   They pin my understanding of each interface, which is not the same as
   pinning the interface.
-- **The UI has no pagination.** It will struggle past a few hundred runs.
+- **The UI loads pages on demand but has no virtualized list**, so a very
+  long scrolled history still holds every row in the DOM.
 - **No end-to-end browser test.** The UI suite runs in jsdom against demo
   data; nothing exercises a real browser against a real server, so a
   breakage in the actual SSE transport or CORS setup would not be caught.

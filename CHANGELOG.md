@@ -12,12 +12,24 @@ drift would mean tracking a compatibility matrix nobody wants to maintain.
 
 ### Added
 
+- **Data retention** — age and per-agent count rules, protected tags, a
+  background sweep that runs shortly after startup, `DELETE /api/runs/{id}`,
+  and `POST /api/runs/prune` which defaults to a dry run and explains why
+  each run was selected.
+- **Cursor pagination** (`/api/runs/page`) so a long history scrolls without
+  the duplicate rows an offset produces under live traffic, plus "Load more"
+  in the UI.
 - **UI test suite** — 56 tests covering the D3 graph, the timeline, the SSE
   hook's event folding, the span drawer, run pinning and diffing, and the
   API client's demo mode. Runs on Node 20 and 22 in CI.
 - Benchmark suite (`scripts/benchmark.py`) measuring per-span overhead,
   memory, and throughput, plus performance guards in the test suite and a
   weak-reference check that finished runs aren't retained.
+
+### Fixed
+
+- The FastAPI app served a hardcoded version that had drifted a full release
+  behind. It now reads `__version__`, with a test keeping it derived.
 
 ### Changed
 

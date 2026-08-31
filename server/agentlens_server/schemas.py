@@ -115,3 +115,35 @@ class AlertEventOut(BaseModel):
     delivered: bool
     delivery_error: Optional[str] = None
     fired_at: float
+
+
+class PruneRequest(BaseModel):
+    """
+    Ad-hoc pruning. `dry_run` defaults to True: deletion is irreversible, so
+    the safe thing has to be the thing you get by forgetting a parameter.
+    """
+
+    older_than_days: Optional[float] = None
+    max_runs_per_agent: Optional[int] = None
+    name: Optional[str] = Field(default=None, description="Only prune this agent's runs")
+    protect_tags: list[str] = Field(default_factory=lambda: ["keep"])
+    dry_run: bool = True
+
+
+class PruneResult(BaseModel):
+    dry_run: bool
+    deleted: int
+    would_delete: int
+    protected: int
+    kept: int
+    cascaded: int
+    reasons: dict[str, str] = Field(default_factory=dict)
+    summary: str
+
+
+class RunPage(BaseModel):
+    """Cursor-paginated runs. The cursor is the last run's start time."""
+
+    runs: list[RunSummary]
+    next_cursor: Optional[float] = None
+    has_more: bool = False

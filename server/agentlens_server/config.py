@@ -15,3 +15,13 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5
 # the time data reaches here it has already crossed the network — but an
 # ingest-side pass is better than nothing for foreign traffic.
 REDACT_ON_INGEST = os.getenv("AGENTLENS_REDACT_ON_INGEST", "").lower() in ("1", "true", "yes")
+
+# --- retention -------------------------------------------------------------
+#
+# Off by default. An observability store that silently deletes data is worse
+# than one that grows, so turning this on has to be a deliberate act.
+from .retention import policy_from_env  # noqa: E402
+
+RETENTION_POLICY = policy_from_env(dict(os.environ))
+# How often the background sweep runs. Only matters when a rule is set.
+RETENTION_SWEEP_HOURS = float(os.getenv("AGENTLENS_RETENTION_SWEEP_HOURS", "6"))

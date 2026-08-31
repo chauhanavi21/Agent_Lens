@@ -36,6 +36,17 @@ def test_all_seven_sites_are_present():
     assert len(release.sites()) == 7
 
 
+def test_the_served_version_is_derived_not_a_literal():
+    """
+    The FastAPI app's version appears at /openapi.json and on the docs page.
+    It was hardcoded to 0.2.0 and drifted a whole release before anyone
+    noticed, so it now reads __version__ — and this keeps it that way.
+    """
+    main = (ROOT / "server" / "agentlens_server" / "main.py").read_text(encoding="utf-8")
+    assert "version=__version__" in main, "the served version was hardcoded again"
+    assert 'version="0.' not in main, "a version literal crept back into main.py"
+
+
 def test_semver_parsing():
     assert release.parse_semver("0.3.0") == (0, 3, 0)
     assert release.parse_semver("1.10.2") == (1, 10, 2)

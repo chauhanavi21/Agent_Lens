@@ -59,6 +59,13 @@ class VersionSite:
 
 
 def sites() -> list[VersionSite]:
+    """
+    Every place a version literal lives.
+
+    Anything that *derives* its version — the FastAPI app reads
+    `__version__` — is deliberately absent: a reference can't drift, so
+    tracking it here would be busywork. A test asserts it stays derived.
+    """
     return [
         VersionSite(
             ROOT / "sdk" / "pyproject.toml",

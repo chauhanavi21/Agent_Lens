@@ -10,7 +10,10 @@ function ago(ts) {
   return `${Math.round(s / 86400)}d ago`
 }
 
-export default function RunList({ runs, selectedId, onSelect, filters, onFilters, diffPair, onTogglePin }) {
+export default function RunList({
+  runs, selectedId, onSelect, filters, onFilters, diffPair, onTogglePin,
+  hasMore = false, onLoadMore, loadingMore = false,
+}) {
   return (
     <aside className="sidebar">
       <div className="filters">
@@ -63,6 +66,13 @@ export default function RunList({ runs, selectedId, onSelect, filters, onFilters
           </li>
         ))}
         {!runs.length && <li className="run-empty">No runs match these filters.</li>}
+        {hasMore && (
+          <li className="run-more">
+            <button className="btn ghost" onClick={onLoadMore} disabled={loadingMore}>
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          </li>
+        )}
       </ul>
     </aside>
   )

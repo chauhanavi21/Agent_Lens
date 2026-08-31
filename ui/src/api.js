@@ -23,6 +23,26 @@ export async function listRuns({ status, name } = {}) {
   return get(`/api/runs?${q}`)
 }
 
+export async function pageRuns({ cursor, status, name, limit = 50 } = {}) {
+  if (DEMO) {
+    const runs = await listRuns({ status, name })
+    return { runs, next_cursor: null, has_more: false }
+  }
+  const q = new URLSearchParams()
+  if (cursor) q.set('cursor', cursor)
+  if (status) q.set('status', status)
+  if (name) q.set('name', name)
+  q.set('limit', String(limit))
+  return get(`/api/runs/page?${q}`)
+}
+
+export async function deleteRun(runId) {
+  if (DEMO) return { deleted: [runId], cascaded: [] }
+  const res = await fetch(`${BASE}/api/runs/${runId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  return res.json()
+}
+
 export async function getRun(runId) {
   if (DEMO) return demoRuns.find(r => r.run_id === runId)
   return get(`/api/runs/${runId}`)

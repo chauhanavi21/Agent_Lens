@@ -236,3 +236,6 @@ code, pre { font-family: var(--mono); }
 @media (prefers-reduced-motion: reduce) {
   .live-pill i, .badge.pulse, .node-running { animation: none; }
 }
+
+.run-more { padding: 12px; text-align: center; }
+.run-more .btn { width: 100%; }

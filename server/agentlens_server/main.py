@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import __version__
 from .config import CORS_ORIGINS, RETENTION_POLICY, RETENTION_SWEEP_HOURS
 from .db import SessionLocal, init_db
-from .routers import alerts, evals, ingest, runs, stream
+from .routers import alerts, analytics, evals, ingest, runs, stream
 
 log = logging.getLogger("agentlens")
 
@@ -70,7 +70,10 @@ async def _retention_sweep() -> None:
                 selection = select_for_pruning([r for r in refs if not r.is_remote], RETENTION_POLICY)
                 doomed, _cascaded = expand_to_traces(selection["run_ids"], refs)
                 if doomed:
+                    from .indexing import deindex_runs
+
                     await session.execute(sql_delete(RunRow).where(RunRow.run_id.in_(doomed)))
+                    await deindex_runs(session, sorted(doomed))
                     await session.commit()
                     log.info("retention sweep removed %d run(s)", len(doomed))
         except asyncio.CancelledError:
@@ -118,6 +121,7 @@ app.include_router(runs.router, prefix="/api")
 app.include_router(alerts.router, prefix="/api")
 app.include_router(stream.router, prefix="/api")
 app.include_router(evals.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
 
 
 @app.get("/api/health")

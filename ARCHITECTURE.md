@@ -82,10 +82,10 @@ across 10k runs") requires a JSONB scan rather than an indexed column. A GIN
 index makes containment queries workable, but this is genuinely worse than a
 normalized schema would be.
 
-**When I'd change it.** If span-level analytics became a headline feature, I
-would keep JSONB as the source of truth and add a derived `span_stats` table
-written on ingest. Denormalizing *for* the query is better than normalizing
-*against* the dominant read.
+**How it was resolved.** Exactly that: JSONB stayed the source of truth and
+a derived `span_index` table was added, written on ingest and rebuildable on
+demand (§11c). Denormalizing *for* the odd query beat normalizing *against*
+the dominant read.
 
 ### 3.2 One wire format, two SDKs
 
@@ -459,6 +459,36 @@ gone. It runs shortly after startup rather than one interval later, since a
 server restarting every few hours would otherwise never reach its first
 sweep.
 
+## 11c. The derived span index
+
+Spans live as JSONB because every view reads a run whole (§3.1). That's
+wrong for exactly one question — "p95 latency of `web_search` across ten
+thousand runs" — which would otherwise be a scan over every span payload.
+
+`span_index` holds one narrow row per span: name, kind, status, duration,
+tokens, cost, model. No inputs, outputs, or attributes, because the point is
+to stay small enough to scan.
+
+**It's derived, not authoritative.** It can be dropped and rebuilt from the
+runs table at any time, which is the advantage over a schema migration: the
+worst case of a rebuild is wasted work, never lost data. `/api/analytics/health`
+reports whether it's populated and `/api/analytics/reindex` rebuilds it.
+
+**Writes go through one module.** Four paths change a run's spans — ingest,
+OTLP ingest, deletion, and the retention sweep — and an index that silently
+misses one produces analytics that are wrong in a way nobody notices. Tests
+assert consistency after each.
+
+**Reindex is delete-then-insert, not upsert.** A re-ingested run can have
+*fewer* spans than before (a shorter retry chain, a truncated export), and
+an upsert would strand the extras forever.
+
+**Percentiles are computed in Python.** `percentile_cont` exists on
+PostgreSQL and not on SQLite, and dev and CI run SQLite — so the SQL version
+would be code that only executes in production. The rows are fetched with a
+cap and sorted in memory; when the cap bites, the response says so rather
+than quietly reporting a percentile over a partial window.
+
 ## 12. Testing strategy
 
 51 Python SDK tests, 82 server tests, 16 TypeScript SDK tests, and 56 UI
@@ -491,8 +521,10 @@ a file glob rather than a directory.
 
 Being honest about these matters more than the feature list:
 
-- **Cross-run span analytics are slow.** JSONB scan, no derived stats table
-  yet (§3.1).
+- **Percentiles are computed over a capped sample.** The most recent 20,000
+  spans in the window, sorted in Python. Exact percentiles over a much
+  larger window would need `percentile_cont`, which SQLite doesn't have —
+  and a query that only runs on PostgreSQL is a query nobody tests.
 - **The live broker is single-process.** Redis swap is designed for but not
   implemented.
 - **Replay matches calls by order and name.** An agent whose call sequence

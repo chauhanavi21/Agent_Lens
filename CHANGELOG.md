@@ -12,6 +12,10 @@ drift would mean tracking a compatibility matrix nobody wants to maintain.
 
 ### Added
 
+- **Cross-run analytics** — a derived `span_index` table backing per-step
+  latency percentiles, error and retry rates, cost by model, and slow-span
+  outliers. Closes the span-analytics limitation documented in
+  ARCHITECTURE.md §3.1.
 - **Data retention** — age and per-agent count rules, protected tags, a
   background sweep that runs shortly after startup, `DELETE /api/runs/{id}`,
   and `POST /api/runs/prune` which defaults to a dry run and explains why

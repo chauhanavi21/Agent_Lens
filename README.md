@@ -625,6 +625,34 @@ Three processes, deliberately. The SDK must be safe to embed in anything;
 the server owns storage and cross-run analysis; the UI is a plain client of
 the API, so everything it does is scriptable.
 
+## Cross-run analytics
+
+A single run's DAG can't tell you whether `web_search` is always slow or
+that run was unlucky. A derived span index answers that:
+
+```bash
+curl 'localhost:7430/api/analytics/spans?days=7'
+```
+
+```json
+{"name": "synthesize", "kind": "llm", "calls": 412, "error_rate": 0.031,
+ "retry_rate": 0.12, "p50_ms": 1840, "p95_ms": 4210, "p99_ms": 9800,
+ "total_cost_usd": 5.21}
+```
+
+- `/api/analytics/spans` — per-step call counts, error and retry rates,
+  p50/p95/p99 latency, tokens, and cost, ordered by total wall-clock time.
+- `/api/analytics/models` — cost and tokens by model, so you can see where
+  the money goes.
+- `/api/analytics/outliers` — individual spans that ran far past their own
+  p95, worst first. Aggregates say a step is slow; this says which run to
+  open.
+
+The index is **derived** from the JSONB on each run, not a second source of
+truth. It's written on ingest and rebuildable at any time
+(`POST /api/analytics/reindex`), so the worst case of it drifting is wasted
+work rather than lost data.
+
 ## Data lifecycle
 
 A trace store that only grows eventually gets deleted by whoever pays for

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..alerts import _describe, build_payload, dispatch, rule_matches
 from ..config import API_KEY, REDACT_ON_INGEST
 from ..db import SessionLocal, get_session
+from ..indexing import reindex_run
 from ..models import AlertEventRow, AlertRuleRow, RunRow
 from ..schemas import RunIn, ScoresIn
 
@@ -94,6 +95,8 @@ async def ingest_run(
     else:  # idempotent re-ingest / streaming update
         for k, v in payload.items():
             setattr(row, k, v)
+
+    await reindex_run(session, {"run_id": run.run_id, "name": run.name, "spans": spans})
     await session.commit()
 
     # only alert on terminal runs — a still-running export isn't news yet
@@ -196,6 +199,7 @@ async def ingest_otlp(
         else:
             for k, v in fields.items():
                 setattr(existing, k, v)
+        await reindex_run(session, run)
         accepted.append(run["run_id"])
     await session.commit()
 

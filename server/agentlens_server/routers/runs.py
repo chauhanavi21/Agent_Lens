@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..diff import diff_runs
+from ..indexing import deindex_runs
 from ..models import RunRow
 from ..retention import (
     RetentionPolicy,
@@ -292,6 +293,7 @@ async def delete_run(
         doomed, cascaded = expand_to_traces([run_id], await _all_refs(session))
 
     await session.execute(sql_delete(RunRow).where(RunRow.run_id.in_(doomed)))
+    await deindex_runs(session, sorted(doomed))
     await session.commit()
     return {"deleted": sorted(doomed), "cascaded": sorted(cascaded)}
 
@@ -330,6 +332,7 @@ async def prune_runs(
     deleted = 0
     if not req.dry_run and doomed:
         await session.execute(sql_delete(RunRow).where(RunRow.run_id.in_(doomed)))
+        await deindex_runs(session, sorted(doomed))
         await session.commit()
         deleted = len(doomed)
 

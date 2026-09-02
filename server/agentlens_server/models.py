@@ -64,3 +64,34 @@ class AlertEventRow(Base):
     delivered: Mapped[bool] = mapped_column(Boolean, default=False)
     delivery_error: Mapped[str] = mapped_column(Text, nullable=True)
     fired_at: Mapped[float] = mapped_column(Float, index=True)
+
+
+class SpanIndexRow(Base):
+    """
+    One narrow row per span, derived from the JSONB on the run.
+
+    Deliberately duplicated data: the run row stays the source of truth and
+    this can be dropped and rebuilt at any time. It exists so cross-run
+    questions ("p95 of web_search") are an indexed query rather than a scan
+    over every run's span payload.
+    """
+
+    __tablename__ = "span_index"
+
+    span_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    run_name: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    started_at: Mapped[float] = mapped_column(Float, index=True)
+    duration_ms: Mapped[float] = mapped_column(Float, nullable=True)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    model: Mapped[str] = mapped_column(String(128), nullable=True)
+    service: Mapped[str] = mapped_column(String(128), nullable=True)
+    is_retry: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+# the common analytics query filters by span name over a time window
+Index("ix_span_index_name_started", SpanIndexRow.name, SpanIndexRow.started_at)

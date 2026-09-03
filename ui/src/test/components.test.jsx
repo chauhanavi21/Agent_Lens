@@ -188,6 +188,54 @@ describe('SpanDrawer', () => {
   })
 })
 
+describe('cost provenance', () => {
+  const withLlm = (llm) => ({
+    ...RUN,
+    total_cost_usd: llm.cost_usd,
+    spans: [RUN.spans[0], { ...RUN.spans[2], llm }],
+  })
+
+  test('an unpriced model is flagged rather than shown as free', () => {
+    const run = withLlm({
+      model: 'mystery-v9', provider: '', input_tokens: 8000, output_tokens: 2000,
+      total_tokens: 10000, cost_usd: 0, cost_source: 'unpriced',
+      prompt_preview: '', response_preview: '',
+    })
+    const { container } = render(<DagView run={run} selectedSpan={null} onSelectSpan={vi.fn()} />)
+    // the total must not read as complete when it excludes real spend
+    expect(container.querySelector('.cost-gap')).toBeTruthy()
+  })
+
+  test('a fully priced run shows no gap marker', () => {
+    const run = withLlm({
+      model: 'gpt-4o', provider: 'openai', input_tokens: 1000, output_tokens: 500,
+      total_tokens: 1500, cost_usd: 0.0075, cost_source: 'table',
+      prompt_preview: '', response_preview: '',
+    })
+    const { container } = render(<DagView run={run} selectedSpan={null} onSelectSpan={vi.fn()} />)
+    expect(container.querySelector('.cost-gap')).toBeNull()
+  })
+
+  test('the drawer explains an unpriced cost instead of printing $0.000000', () => {
+    render(<SpanDrawer span={{ ...RUN.spans[2], llm: {
+      model: 'mystery-v9', provider: '', input_tokens: 8000, output_tokens: 2000,
+      total_tokens: 10000, cost_usd: 0, cost_source: 'unpriced',
+      prompt_preview: '', response_preview: '',
+    } }} onClose={vi.fn()} />)
+    expect(screen.getByText(/no price configured for mystery-v9/)).toBeInTheDocument()
+    expect(screen.queryByText('$0.000000')).toBeNull()
+  })
+
+  test('a provider-reported cost is labelled as such', () => {
+    render(<SpanDrawer span={{ ...RUN.spans[2], llm: {
+      model: 'gateway', provider: '', input_tokens: 10, output_tokens: 5,
+      total_tokens: 15, cost_usd: 0.0031, cost_source: 'reported',
+      prompt_preview: '', response_preview: '',
+    } }} onClose={vi.fn()} />)
+    expect(screen.getByText(/reported by provider/)).toBeInTheDocument()
+  })
+})
+
 describe('TimelineView', () => {
   test('renders one row per span, ordered by start time', () => {
     const { container } = render(<TimelineView run={RUN} selectedSpan={null} onSelectSpan={vi.fn()} />)

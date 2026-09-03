@@ -318,3 +318,93 @@ async def test_analytics_on_an_empty_store(client):
     assert result["stats"] == []
     assert (await client.get("/api/analytics/models")).json()["total_cost_usd"] == 0
     assert (await client.get("/api/analytics/outliers")).json()["outliers"] == []
+
+
+async def test_cost_total_admits_what_it_does_not_cover(client, make_run):
+    """
+    The failure this guards against: an unpriced model contributes 0.00 to
+    the total, so the dashboard shows a confident number that silently
+    excludes real spend.
+    """
+    priced = make_run()
+    priced["spans"][2]["llm"] = {
+        "model": "gpt-4o",
+        "provider": "openai",
+        "input_tokens": 1000,
+        "output_tokens": 500,
+        "total_tokens": 1500,
+        "cost_usd": 0.0075,
+        "cost_source": "table",
+        "prompt_preview": "",
+        "response_preview": "",
+        "temperature": None,
+    }
+    await client.post("/api/ingest/run", json=priced)
+
+    unpriced = make_run()
+    unpriced["spans"][2]["llm"] = {
+        "model": "mystery-model-v9",
+        "provider": "",
+        "input_tokens": 8000,
+        "output_tokens": 2000,
+        "total_tokens": 10000,
+        "cost_usd": 0.0,
+        "cost_source": "unpriced",
+        "prompt_preview": "",
+        "response_preview": "",
+        "temperature": None,
+    }
+    await client.post("/api/ingest/run", json=unpriced)
+
+    result = (await client.get("/api/analytics/models")).json()
+
+    assert result["total_cost_usd"] == 0.0075
+    assert result["unpriced_models"] == ["mystery-model-v9"]
+    assert result["unpriced_tokens"] == 10000
+    # the total only covers 1500 of 11500 tokens, and says so
+    assert result["cost_coverage"] < 0.15
+    assert "not included in this total" in result["warning"]
+
+
+async def test_fully_priced_totals_carry_no_warning(client, make_run):
+    run = make_run()
+    run["spans"][2]["llm"] = {
+        "model": "gpt-4o",
+        "provider": "openai",
+        "input_tokens": 1000,
+        "output_tokens": 500,
+        "total_tokens": 1500,
+        "cost_usd": 0.0075,
+        "cost_source": "table",
+        "prompt_preview": "",
+        "response_preview": "",
+        "temperature": None,
+    }
+    await client.post("/api/ingest/run", json=run)
+
+    result = (await client.get("/api/analytics/models")).json()
+    assert result["warning"] is None
+    assert result["unpriced_models"] == []
+    assert result["cost_coverage"] == 1.0
+
+
+async def test_old_runs_without_cost_source_still_work(client, make_run):
+    """Runs traced before this field existed must not break analytics."""
+    run = make_run()
+    run["spans"][2]["llm"] = {
+        "model": "gpt-4o",
+        "provider": "openai",
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "total_tokens": 150,
+        "cost_usd": 0.001,
+        "prompt_preview": "",
+        "response_preview": "",
+        "temperature": None,
+    }
+    assert (await client.post("/api/ingest/run", json=run)).status_code == 201
+
+    result = (await client.get("/api/analytics/models")).json()
+    # a legacy run with a real cost is treated as priced, not as a gap
+    assert result["total_cost_usd"] == 0.001
+    assert result["unpriced_models"] == []

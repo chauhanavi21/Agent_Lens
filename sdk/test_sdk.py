@@ -1435,9 +1435,143 @@ def test_compat_format_exception_matches_the_stdlib():
     print("test_compat_format_exception_matches_the_stdlib ok")
 
 
+def test_unpriced_model_is_marked_not_silently_free():
+    """
+    The bug this fixes: an unknown model estimated at $0.00, which reads as
+    "this step was free" rather than "nobody priced this". A dashboard
+    summing those zeros is confidently wrong, and $0.00 is plausible enough
+    that nobody checks.
+    """
+    from agentlens.cost import COST_TABLE, COST_UNPRICED, estimate_cost
+
+    known_cost, known_source = estimate_cost("gpt-4o", 1000, 500)
+    assert known_cost == 0.0075 and known_source == COST_TABLE
+
+    unknown_cost, unknown_source = estimate_cost("brand-new-model-v9", 1000, 500)
+    assert unknown_cost == 0.0
+    assert unknown_source == COST_UNPRICED, "an unpriced model must be distinguishable from a free one"
+    print("test_unpriced_model_is_marked_not_silently_free ok")
+
+
+def test_longest_price_key_wins():
+    """gpt-4o-mini billed at gpt-4o rates is a 16x error that looks plausible."""
+    from agentlens.cost import estimate_cost
+
+    mini, _ = estimate_cost("gpt-4o-mini", 1_000_000, 0)
+    full, _ = estimate_cost("gpt-4o", 1_000_000, 0)
+    assert mini == 0.15 and full == 2.50
+    print("test_longest_price_key_wins ok")
+
+
+def test_reported_cost_beats_the_local_table():
+    """A gateway that tells us the real charge is authoritative."""
+    from agentlens.cost import COST_REPORTED, estimate_cost
+
+    cost, source = estimate_cost("gpt-4o", 1000, 500, reported_cost=0.042)
+    assert cost == 0.042 and source == COST_REPORTED
+
+    # a nonsense reported value falls back rather than poisoning the total
+    cost, source = estimate_cost("gpt-4o", 1000, 500, reported_cost="not-a-number")
+    assert cost == 0.0075 and source != COST_REPORTED
+    print("test_reported_cost_beats_the_local_table ok")
+
+
+def test_free_is_distinct_from_unpriced():
+    from agentlens.cost import COST_FREE, COST_UNPRICED, estimate_cost
+
+    _, free = estimate_cost("local-llama", 1000, 500, {"local-llama": (0.0, 0.0)})
+    _, unknown = estimate_cost("local-llama", 1000, 500)
+    assert free == COST_FREE
+    assert unknown == COST_UNPRICED
+    print("test_free_is_distinct_from_unpriced ok")
+
+
+def test_cost_table_loads_from_the_environment():
+    """A table baked into a release is wrong by the next repricing."""
+    import tempfile
+
+    from agentlens.cost import estimate_cost, load_cost_table_from_env
+
+    assert load_cost_table_from_env({"AGENTLENS_COST_TABLE": '{"my-model": [1.0, 2.0]}'}) == {
+        "my-model": (1.0, 2.0)
+    }
+
+    path = os.path.join(tempfile.mkdtemp(), "prices.json")
+    with open(path, "w") as f:
+        json.dump({"my-model": [1.0, 2.0]}, f)
+    assert load_cost_table_from_env({"AGENTLENS_COST_TABLE": path}) == {"my-model": (1.0, 2.0)}
+
+    # a broken table is ignored, never raised: failing an agent's startup
+    # over a typo in a pricing file would be a bad trade
+    assert load_cost_table_from_env({"AGENTLENS_COST_TABLE": "not json {{"}) == {}
+    assert load_cost_table_from_env({"AGENTLENS_COST_TABLE": "/no/such/file.json"}) == {}
+    assert load_cost_table_from_env({}) == {}
+
+    os.environ["AGENTLENS_COST_TABLE"] = '{"my-model": [1.0, 2.0]}'
+    try:
+        cost, source = estimate_cost("my-model", 1_000_000, 0)
+        assert cost == 1.0 and source == "table"
+    finally:
+        os.environ.pop("AGENTLENS_COST_TABLE", None)
+    print("test_cost_table_loads_from_the_environment ok")
+
+
+def test_span_records_cost_provenance():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    @lens.llm_call("chat", model="mystery-model-v1")
+    def chat(prompt):
+        return {"model": "mystery-model-v1", "usage": {"prompt_tokens": 1000, "completion_tokens": 500}}
+
+    @lens.trace("agent")
+    def agent():
+        return chat("hello")
+
+    agent()
+    run = json.loads(open(path).read().strip())
+    span = next(s for s in run["spans"] if s["kind"] == "llm")
+
+    assert span["llm"]["cost_source"] == "unpriced"
+    assert span["llm"]["total_tokens"] == 1500, "tokens are still counted"
+    # the model name is on the span so the gap can name itself
+    assert span["attributes"]["agentlens.cost.unpriced_model"] == "mystery-model-v1"
+    print("test_span_records_cost_provenance ok")
+
+
+def test_reported_cost_flows_onto_the_span():
+    path = os.path.join(tempfile.mkdtemp(), "runs.jsonl")
+    lens = AgentLens(exporter=FileExporter(path))
+
+    @lens.llm_call("chat", model="gateway-model")
+    def chat(prompt):
+        # gateways like OpenRouter return the actual charge
+        return {
+            "model": "gateway-model",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.0031},
+        }
+
+    @lens.trace("agent")
+    def agent():
+        return chat("hello")
+
+    agent()
+    span = next(s for s in json.loads(open(path).read().strip())["spans"] if s["kind"] == "llm")
+    assert span["llm"]["cost_usd"] == 0.0031
+    assert span["llm"]["cost_source"] == "reported"
+    print("test_reported_cost_flows_onto_the_span ok")
+
+
 if __name__ == "__main__":
     test_no_module_calls_format_exception_directly()
     test_compat_format_exception_matches_the_stdlib()
+    test_unpriced_model_is_marked_not_silently_free()
+    test_longest_price_key_wins()
+    test_reported_cost_beats_the_local_table()
+    test_free_is_distinct_from_unpriced()
+    test_cost_table_loads_from_the_environment()
+    test_span_records_cost_provenance()
+    test_reported_cost_flows_onto_the_span()
     test_basic_dag()
     test_error_and_retry()
     test_budget_guard()

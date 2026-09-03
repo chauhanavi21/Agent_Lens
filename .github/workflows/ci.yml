@@ -32,7 +32,7 @@ jobs:
           - python: "3.12"
             os: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -78,7 +78,7 @@ jobs:
       matrix:
         python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -116,7 +116,7 @@ jobs:
           --health-cmd "pg_isready -U agentlens"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -180,7 +180,7 @@ jobs:
       matrix:
         node: ["18", "20", "22"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -204,7 +204,7 @@ jobs:
     name: Python ↔ TypeScript wire compatibility
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -232,7 +232,7 @@ jobs:
       matrix:
         node: ["20", "22"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -256,7 +256,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -284,7 +284,7 @@ jobs:
     name: Docker images build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
 
       - name: Server image

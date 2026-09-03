@@ -1,0 +1,62 @@
+site_name: AgentLens
+site_description: Open source observability runtime for AI agents
+site_url: https://chauhanavi21.github.io/Agent_Lens/
+repo_url: https://github.com/chauhanavi21/Agent_Lens
+repo_name: chauhanavi21/Agent_Lens
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: blue
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight: { anchor_linenums: true }
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Tracing your agent: guides/tracing.md
+      - TypeScript SDK: guides/typescript.md
+      - Framework integrations: guides/frameworks.md
+      - Evals and the CI gate: guides/evals.md
+      - Trace replay: guides/replay.md
+  - Reference:
+      - OpenTelemetry bridge: reference/opentelemetry.md
+      - MCP tracing: reference/mcp.md
+      - Live streaming: reference/streaming.md
+      - Cross-run analytics: reference/analytics.md
+      - Performance: reference/performance.md
+  - Operations:
+      - Self-hosting: operations/self-hosting.md
+      - PII redaction: operations/privacy.md
+      - Data lifecycle: operations/data-lifecycle.md
+      - Releases: operations/releases.md
+
+# A broken internal link is a docs bug that ships silently, so fail the
+# build rather than publishing a dead page.
+strict: true
+validation:
+  links:
+    absolute_links: ignore
+    unrecognized_links: warn

@@ -7,7 +7,16 @@
  */
 
 export { currentRun, currentSpan, withContext, withSpan } from './context.js';
-export { DEFAULT_COST_TABLE, estimateCostUsd, extractUsage, type CostTable } from './cost.js';
+export {
+  DEFAULT_COST_TABLE,
+  estimateCost,
+  estimateCostUsd,
+  extractReportedCost,
+  extractUsage,
+  lookupPrice,
+  type CostSource,
+  type CostTable,
+} from './cost.js';
 export {
   ConsoleExporter,
   FileExporter,

@@ -15,7 +15,7 @@
  */
 
 import { currentContext, currentRun, currentSpan, withContext, withSpan } from './context.js';
-import { estimateCostUsd, extractUsage, type CostTable } from './cost.js';
+import { estimateCost, extractReportedCost, extractUsage, type CostTable } from './cost.js';
 import { ConsoleExporter, HttpExporter, type Exporter } from './exporters.js';
 import { AgentRun, Span, preview, type SpanKind } from './models.js';
 import { runEndEvent, runStartEvent, spanEvent } from './streaming.js';
@@ -233,13 +233,24 @@ export class AgentLens {
 
       const usage = extractUsage(result);
       const model = usage.model || options.model || '';
+      const { cost, source } = estimateCost(
+        model,
+        usage.input,
+        usage.output,
+        this.costTable,
+        extractReportedCost(result),
+      );
+      if (source === 'unpriced' && usage.input + usage.output > 0) {
+        span.attributes['agentlens.cost.unpriced_model'] = model || '(unknown)';
+      }
       span.llm = {
         model,
         provider: options.provider ?? '',
         input_tokens: usage.input,
         output_tokens: usage.output,
         total_tokens: usage.input + usage.output,
-        cost_usd: estimateCostUsd(model, usage.input, usage.output, this.costTable),
+        cost_usd: cost,
+        cost_source: source,
         prompt_preview: preview(args[0]),
         response_preview: preview(result),
         temperature: null,

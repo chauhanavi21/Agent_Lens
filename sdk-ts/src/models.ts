@@ -20,6 +20,8 @@ export interface LLMMetadata {
   prompt_preview: string;
   response_preview: string;
   temperature: number | null;
+  /** reported | table | unpriced | free — see cost.ts */
+  cost_source: string;
 }
 
 export interface SpanData {

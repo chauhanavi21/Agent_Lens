@@ -15,3 +15,6 @@ sdk-ts/node_modules/
 
 # vitest
 ui/coverage/
+
+# mkdocs build output
+site/

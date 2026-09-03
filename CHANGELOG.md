@@ -12,6 +12,10 @@ drift would mean tracking a compatibility matrix nobody wants to maintain.
 
 ### Added
 
+- **Documentation site** (mkdocs-material, published to GitHub Pages) — the
+  README had grown to 854 lines and 23 sections, which nobody reads. It's
+  now 169 lines pointing at fourteen focused pages, with a link checker that
+  fails CI on a dead link or an unreachable page.
 - **Cross-run analytics** — a derived `span_index` table backing per-step
   latency percentiles, error and retry rates, cost by model, and slow-span
   outliers. Closes the span-analytics limitation documented in

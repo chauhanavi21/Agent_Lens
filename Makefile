@@ -1,4 +1,4 @@
-.PHONY: help install test test-sdk test-server test-ts test-ui lint fmt interop bench demo demo-live version release up down clean
+.PHONY: help install test test-sdk test-server test-ts test-ui lint fmt interop bench docs docs-build demo demo-live version release up down clean
 
 help:  ## Show this help
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -29,10 +29,17 @@ bench:  ## Measure tracing overhead
 interop:  ## Verify both SDKs produce the same DAG
 	python scripts/interop_check.py
 
-lint:  ## Check lint, formatting, and version sync
+lint:  ## Check lint, formatting, version sync, and docs links
 	ruff check .
 	ruff format --check .
 	python scripts/release.py check
+	python scripts/check_docs.py
+
+docs:  ## Serve the documentation site locally
+	mkdocs serve
+
+docs-build:  ## Build the docs site, failing on a broken link
+	mkdocs build --strict
 
 version:  ## Show every version string
 	python scripts/release.py check

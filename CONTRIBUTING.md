@@ -22,6 +22,17 @@ Read **[ARCHITECTURE.md](ARCHITECTURE.md)** first if you're changing
 anything structural — it explains the constraints the guidelines below come
 from, and the known limitations worth working on.
 
+## Documentation
+
+```bash
+make docs          # live-reload at localhost:8000
+make docs-build    # build, failing on a broken internal link
+```
+
+Pages live in `docs/` and must be listed in the `nav` in `mkdocs.yml` —
+`scripts/check_docs.py` fails the build for a page that isn't, since an
+unreachable page ships silently and nobody files a bug about docs.
+
 ## Guidelines
 
 - The SDK stays dependency-free. Integrations that need a framework go in

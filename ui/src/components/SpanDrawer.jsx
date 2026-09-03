@@ -44,7 +44,18 @@ export default function SpanDrawer({ span, onClose }) {
           <h4>LLM call</h4>
           <Row label="Model">{llm.model || '—'}</Row>
           <Row label="Tokens">{llm.input_tokens} in / {llm.output_tokens} out ({llm.total_tokens} total)</Row>
-          <Row label="Cost">${(llm.cost_usd || 0).toFixed(6)}</Row>
+          <Row label="Cost">
+            {llm.cost_source === 'unpriced' && llm.total_tokens ? (
+              <span className="cost-unpriced">
+                no price configured for {llm.model || 'this model'}
+              </span>
+            ) : (
+              <>
+                ${(llm.cost_usd || 0).toFixed(6)}
+                {llm.cost_source === 'reported' && <span className="cost-note"> reported by provider</span>}
+              </>
+            )}
+          </Row>
           <Row label="Prompt"><pre>{llm.prompt_preview}</pre></Row>
           <Row label="Response"><pre>{llm.response_preview}</pre></Row>
         </div>

@@ -239,3 +239,7 @@ code, pre { font-family: var(--mono); }
 
 .run-more { padding: 12px; text-align: center; }
 .run-more .btn { width: 100%; }
+
+.cost-gap { color: var(--warn); margin-left: 2px; cursor: help; }
+.cost-unpriced { color: var(--warn); }
+.cost-note { color: var(--text-dim); font-size: 10.5px; }

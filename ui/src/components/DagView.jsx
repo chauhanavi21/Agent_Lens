@@ -104,6 +104,15 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
       .append('text').attr('x', nodeW - 14).attr('y', 38).attr('class', 'node-retry').text('↻')
   }, [run, selectedSpan, onSelectSpan])
 
+  // a cost total that quietly omits an unpriced model reads as complete
+  const unpriced = [
+    ...new Set(
+      (run.spans || [])
+        .filter((s) => s.llm && s.llm.cost_source === 'unpriced' && s.llm.total_tokens)
+        .map((s) => s.llm.model || 'unknown model'),
+    ),
+  ]
+
   return (
     <div className="dag-wrap">
       <div className="dag-header">
@@ -111,7 +120,10 @@ export default function DagView({ run, selectedSpan, onSelectSpan }) {
         <div className="dag-stats">
           <span>{run.spans.length} spans</span>
           <span>{(run.total_tokens || 0).toLocaleString()} tokens</span>
-          <span>${(run.total_cost_usd || 0).toFixed(4)}</span>
+          <span title={unpriced.length ? `Excludes ${unpriced.join(', ')} — no price configured` : undefined}>
+            ${(run.total_cost_usd || 0).toFixed(4)}
+            {unpriced.length > 0 && <span className="cost-gap">+?</span>}
+          </span>
           <span>{run.duration_ms >= 1000 ? (run.duration_ms / 1000).toFixed(1) + 's' : Math.round(run.duration_ms || 0) + 'ms'}</span>
         </div>
       </div>

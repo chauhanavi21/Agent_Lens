@@ -27,7 +27,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Optional
 
-from ..cost import estimate_cost_usd
+from ..cost import estimate_cost
 from ..models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 
 # The SDK names its span_data classes; map the recognizable part to a kind.
@@ -187,12 +187,14 @@ class AgentLensTracingProcessor:
             get = usage.get if isinstance(usage, dict) else (lambda k, d=None: getattr(usage, k, d))
             input_tokens = int(get("input_tokens", 0) or get("prompt_tokens", 0) or 0)
             output_tokens = int(get("output_tokens", 0) or get("completion_tokens", 0) or 0)
+            _cost = estimate_cost(model, input_tokens, output_tokens, self.lens.cost_table)
             span.llm = LLMMetadata(
                 model=model,
                 provider="openai",
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                cost_usd=estimate_cost_usd(model, input_tokens, output_tokens, self.lens.cost_table),
+                cost_usd=_cost[0],
+                cost_source=_cost[1],
                 prompt_preview=span.inputs if self.capture_content else "",
                 response_preview=span.outputs if self.capture_content else "",
             )

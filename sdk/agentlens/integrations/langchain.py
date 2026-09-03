@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any, Optional
 from uuid import UUID
 
-from ..cost import estimate_cost_usd
+from ..cost import estimate_cost
 from ..models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 from ..tracer import AgentLens
 
@@ -118,7 +118,7 @@ class AgentLensCallbackHandler(BaseCallbackHandler):
             span.llm.model = model
             span.llm.input_tokens = int(usage.get("prompt_tokens", 0))
             span.llm.output_tokens = int(usage.get("completion_tokens", 0))
-            span.llm.cost_usd = estimate_cost_usd(
+            span.llm.cost_usd, span.llm.cost_source = estimate_cost(
                 model, span.llm.input_tokens, span.llm.output_tokens, self.lens.cost_table
             )
             span.llm.response_preview = _preview(response)

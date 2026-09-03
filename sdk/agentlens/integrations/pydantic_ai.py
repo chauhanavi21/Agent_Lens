@@ -28,7 +28,7 @@ from typing import Any, Optional
 
 from .. import context as ctx
 from ..compat import format_exception
-from ..cost import estimate_cost_usd
+from ..cost import estimate_cost
 from ..models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 
 
@@ -107,12 +107,14 @@ class TracedAgent:
             if request or response or model:
                 model_span = Span(name=model or "model", kind=SpanKind.LLM, parent_id=root.span_id)
                 model_span.outputs = _preview(output)
+                _cost = estimate_cost(model, request, response, self._lens.cost_table)
                 model_span.llm = LLMMetadata(
                     model=model,
                     provider=str(model).split(":")[0] if ":" in str(model) else "",
                     input_tokens=request,
                     output_tokens=response,
-                    cost_usd=estimate_cost_usd(model, request, response, self._lens.cost_table),
+                    cost_usd=_cost[0],
+                    cost_source=_cost[1],
                     response_preview=_preview(output),
                 )
                 model_span.finish(SpanStatus.SUCCESS)

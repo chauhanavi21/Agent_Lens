@@ -271,6 +271,9 @@ jobs:
         with:
           args: format --check .
 
+      - name: Docs links resolve
+        run: python scripts/check_docs.py
+
       - name: Version strings agree
         # Seven files carry the version. The publish workflows reject a tag
         # that disagrees with the package, so catching drift on a pull

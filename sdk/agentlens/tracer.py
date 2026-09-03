@@ -22,7 +22,7 @@ from typing import Any, Callable, Optional
 
 from . import context as ctx
 from .compat import format_exception
-from .cost import estimate_cost_usd
+from .cost import COST_UNPRICED, estimate_cost, extract_reported_cost
 from .exporters import ConsoleExporter, Exporter, HttpExporter
 from .models import AgentRun, LLMMetadata, Span, SpanKind, SpanStatus, _preview
 from .redaction import Redactor, build_redactor
@@ -375,9 +375,16 @@ class AgentLens:
                 if rmodel:
                     meta.model = str(rmodel)
                 meta.response_preview = _preview(result)
-                meta.cost_usd = estimate_cost_usd(
-                    meta.model, meta.input_tokens, meta.output_tokens, self.cost_table
+                meta.cost_usd, meta.cost_source = estimate_cost(
+                    meta.model,
+                    meta.input_tokens,
+                    meta.output_tokens,
+                    self.cost_table,
+                    reported_cost=extract_reported_cost(result),
                 )
+                if meta.cost_source == COST_UNPRICED and meta.total_tokens:
+                    # named on the span so an unpriced total can explain itself
+                    span.attributes["agentlens.cost.unpriced_model"] = meta.model or "(unknown)"
                 span.llm = meta
                 self._check_budget()
 

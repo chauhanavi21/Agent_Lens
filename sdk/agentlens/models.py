@@ -42,6 +42,11 @@ class LLMMetadata:
     prompt_preview: str = ""  # first 500 chars of prompt
     response_preview: str = ""  # first 500 chars of response
     temperature: Optional[float] = None
+    # Where cost_usd came from: reported | table | unpriced | free.
+    # Without this, an unpriced model's 0.0 is indistinguishable from a step
+    # that genuinely cost nothing — and a total summing those is wrong in a
+    # way that looks right.
+    cost_source: str = "unpriced"
 
     @property
     def total_tokens(self) -> int:
@@ -55,6 +60,7 @@ class LLMMetadata:
             "output_tokens": self.output_tokens,
             "total_tokens": self.total_tokens,
             "cost_usd": round(self.cost_usd, 6),
+            "cost_source": self.cost_source,
             "prompt_preview": self.prompt_preview,
             "response_preview": self.response_preview,
             "temperature": self.temperature,

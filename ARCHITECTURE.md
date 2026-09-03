@@ -489,6 +489,31 @@ would be code that only executes in production. The rows are fetched with a
 cap and sorted in memory; when the cap bites, the response says so rather
 than quietly reporting a percentile over a partial window.
 
+## 11d. Zero versus unknown
+
+Cost estimation returned 0.0 for a model it didn't recognize. That's not
+wrong arithmetic — it's the wrong *type* of answer: $0.00 is a plausible
+number, so a dashboard summing unpriced spans reports a total that looks
+complete and isn't.
+
+Every estimate now carries where it came from — `reported`, `table`, `free`,
+or `unpriced` — and the aggregate reports its own coverage rather than
+absorbing the gap. Three consequences worth noting:
+
+**A provider-reported cost beats the table.** Gateways return the actual
+charge; a local table is a guess about someone else's billing.
+
+**Legacy runs get inference, not a default.** A run traced before the field
+existed never made a claim about provenance, so the ingest schema accepts
+`None` rather than defaulting to `unpriced` — otherwise every historical run
+with a real cost would be recategorized as a gap. The analytics layer infers
+from whether a cost is non-zero. A test covers exactly this.
+
+**The table is configurable, because it will be wrong.** `AGENTLENS_COST_TABLE`
+takes a JSON file or inline JSON, and a malformed one is ignored rather than
+raised — failing an agent's startup over a typo in a pricing file is a bad
+trade.
+
 ## 12. Testing strategy
 
 51 Python SDK tests, 82 server tests, 16 TypeScript SDK tests, and 56 UI
@@ -530,8 +555,9 @@ Being honest about these matters more than the feature list:
 - **Replay matches calls by order and name.** An agent whose call sequence
   varies run to run under identical inputs will produce misleading matches —
   though the input check turns most of those into explicit errors.
-- **Cost estimation is a static price table.** It drifts, and it silently
-  returns 0 for unknown models rather than flagging them.
+- **Cost estimation is still a static table** and drifts with repricing —
+  but it no longer *silently* returns 0. Unknown models are marked
+  `unpriced`, and totals report their coverage (§11d).
 - **No auth beyond a shared bearer token.** Fine for self-hosting behind a
   VPN, not fine for multi-tenant.
 - **Framework adapters are tested against fakes, not the real libraries.**

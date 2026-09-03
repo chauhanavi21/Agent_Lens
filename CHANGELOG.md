@@ -32,6 +32,13 @@ drift would mean tracking a compatibility matrix nobody wants to maintain.
 
 ### Fixed
 
+- **An unrecognized model estimated at $0.00**, indistinguishable from a step
+  that genuinely cost nothing — so cost totals silently understated real
+  spend. Costs now carry provenance (`reported` / `table` / `free` /
+  `unpriced`), `/api/analytics/models` reports its coverage and names the
+  models it couldn't price, and the UI marks an incomplete total. Prices are
+  configurable with `AGENTLENS_COST_TABLE`, and a provider-reported cost
+  takes precedence over the table.
 - The FastAPI app served a hardcoded version that had drifted a full release
   behind. It now reads `__version__`, with a test keeping it derived.
 

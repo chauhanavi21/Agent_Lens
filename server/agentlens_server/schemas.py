@@ -15,6 +15,10 @@ class LLMMetadataIn(BaseModel):
     prompt_preview: str = ""
     response_preview: str = ""
     temperature: Optional[float] = None
+    # None, not "unpriced": a run traced before this field existed never
+    # said anything about provenance, and defaulting it here would invent
+    # a claim the SDK never made. The analytics layer infers instead.
+    cost_source: Optional[str] = None
 
 
 class SpanIn(BaseModel):

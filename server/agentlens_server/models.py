@@ -89,6 +89,7 @@ class SpanIndexRow(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     model: Mapped[str] = mapped_column(String(128), nullable=True)
+    cost_source: Mapped[str] = mapped_column(String(16), nullable=True)
     service: Mapped[str] = mapped_column(String(128), nullable=True)
     is_retry: Mapped[bool] = mapped_column(Boolean, default=False)
 

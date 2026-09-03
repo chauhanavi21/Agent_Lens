@@ -78,6 +78,11 @@ def span_rows_for_run(run: dict[str, Any]) -> list[dict[str, Any]]:
                 "total_tokens": int(llm.get("total_tokens") or 0),
                 "cost_usd": float(llm.get("cost_usd") or 0.0),
                 "model": str(llm.get("model") or ""),
+                # Legacy runs carry no provenance. A non-zero cost means the
+                # SDK priced it; a zero one is genuinely unknown either way.
+                "cost_source": str(
+                    llm.get("cost_source") or ("table" if llm.get("cost_usd") else "unpriced")
+                ),
                 "service": span.get("service"),
                 "is_retry": bool(span.get("retry_of")),
             }
@@ -112,6 +117,8 @@ def summarize(
                 "durations": [],
                 "total_tokens": 0,
                 "total_cost_usd": 0.0,
+                "unpriced_calls": 0,
+                "unpriced_tokens": 0,
                 "runs": set(),
             },
         )
@@ -124,6 +131,11 @@ def summarize(
             bucket["durations"].append(float(row["duration_ms"]))
         bucket["total_tokens"] += int(row.get("total_tokens") or 0)
         bucket["total_cost_usd"] += float(row.get("cost_usd") or 0.0)
+        # a token count with no price is spend we can't see; counting it
+        # keeps a total from quietly understating itself
+        if row.get("cost_source") == "unpriced" and row.get("total_tokens"):
+            bucket["unpriced_calls"] += 1
+            bucket["unpriced_tokens"] += int(row.get("total_tokens") or 0)
         bucket["runs"].add(row.get("run_id"))
 
     out = []

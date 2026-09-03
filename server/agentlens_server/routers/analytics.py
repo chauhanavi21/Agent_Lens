@@ -30,6 +30,7 @@ def _row_dict(row) -> dict:
         "total_tokens": row.total_tokens,
         "cost_usd": row.cost_usd,
         "model": row.model,
+        "cost_source": row.cost_source,
         "service": row.service,
         "is_retry": row.is_retry,
     }
@@ -96,10 +97,25 @@ async def model_stats(
     """Cost and token usage grouped by model — where the money goes."""
     rows, capped = await _fetch(session, days=days, agent=agent, kind="llm")
     stats = [s for s in summarize(rows, group_by="model", sample_capped=capped) if s.get("model")]
+
+    unpriced = [s for s in stats if s["unpriced_calls"]]
+    unpriced_tokens = sum(s["unpriced_tokens"] for s in stats)
+
     return {
         "window_days": days,
         "total_cost_usd": round(sum(s["total_cost_usd"] for s in stats), 6),
         "total_tokens": sum(s["total_tokens"] for s in stats),
+        # A cost total that silently omits unpriced models is wrong in a way
+        # that looks right. Say what the number doesn't cover.
+        "unpriced_models": sorted({s["model"] for s in unpriced}),
+        "unpriced_tokens": unpriced_tokens,
+        "cost_coverage": (round(1 - unpriced_tokens / max(sum(s["total_tokens"] for s in stats), 1), 4)),
+        "warning": (
+            f"{unpriced_tokens:,} tokens across {len(unpriced)} unpriced model(s) "
+            "are not included in this total — add prices with AGENTLENS_COST_TABLE"
+        )
+        if unpriced
+        else None,
         "sample_capped": capped,
         "stats": sorted(stats, key=lambda s: s["total_cost_usd"], reverse=True),
     }

@@ -6,6 +6,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
+from ..dependencies import require
 from ..diff import diff_runs
 from ..indexing import deindex_runs
 from ..models import RunRow
@@ -65,6 +66,7 @@ async def list_runs(
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     include_remote: bool = Query(default=False, description="Include MCP server / sub-agent runs"),
+    _principal=Depends(require("read")),
 ):
     stmt = select(RunRow).order_by(desc(RunRow.started_at)).limit(limit).offset(offset)
     # remote continuations show inside their caller's DAG, not as separate
@@ -106,6 +108,7 @@ async def page_runs(
     status: Optional[str] = Query(default=None),
     name: Optional[str] = Query(default=None),
     include_remote: bool = Query(default=False),
+    _principal=Depends(require("read")),
 ):
     """
     Cursor pagination, for scrolling a long history.
@@ -137,7 +140,10 @@ async def page_runs(
 
 
 @router.get("/runs/stats")
-async def stats(session: AsyncSession = Depends(get_session)):
+async def stats(
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     total = (await session.execute(select(func.count(RunRow.run_id)))).scalar() or 0
     by_status_rows = (
         await session.execute(select(RunRow.status, func.count(RunRow.run_id)).group_by(RunRow.status))
@@ -157,6 +163,7 @@ async def score_trends(
     session: AsyncSession = Depends(get_session),
     name: Optional[str] = Query(default=None, description="Filter to one agent"),
     limit: int = Query(default=100, le=500),
+    _principal=Depends(require("read")),
 ):
     """Score history per metric, oldest first — the shape of quality over time."""
     stmt = select(RunRow).order_by(desc(RunRow.started_at)).limit(limit)
@@ -182,7 +189,11 @@ async def score_trends(
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
+async def get_run(
+    run_id: str,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     row = await session.get(RunRow, run_id)
     if row is None:
         # still executing: serve the in-memory shape so the UI can open a
@@ -222,7 +233,11 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/runs/{run_id}/cassette")
-async def cassette(run_id: str, session: AsyncSession = Depends(get_session)):
+async def cassette(
+    run_id: str,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     """
     A replay-ready recording of this run's side effects: tool, LLM,
     retrieval, and MCP outputs keyed by call order. Save it as a fixture and
@@ -273,6 +288,7 @@ async def delete_run(
     run_id: str,
     session: AsyncSession = Depends(get_session),
     cascade: bool = Query(default=True, description="Also delete remote runs in this trace"),
+    _principal=Depends(require("admin")),
 ):
     """
     Delete one run.
@@ -302,6 +318,7 @@ async def delete_run(
 async def prune_runs(
     req: PruneRequest,
     session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("admin")),
 ):
     """
     Apply a retention policy on demand.
@@ -357,7 +374,11 @@ async def prune_runs(
 
 
 @router.post("/runs/diff")
-async def diff(req: DiffRequest, session: AsyncSession = Depends(get_session)):
+async def diff(
+    req: DiffRequest,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     a = await session.get(RunRow, req.run_a)
     b = await session.get(RunRow, req.run_b)
     missing = [rid for rid, row in ((req.run_a, a), (req.run_b, b)) if row is None]

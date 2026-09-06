@@ -1,25 +1,19 @@
 import time
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..alerts import _describe, build_payload, dispatch, rule_matches
-from ..config import API_KEY, REDACT_ON_INGEST
+from ..config import REDACT_ON_INGEST
 from ..db import SessionLocal, get_session
+from ..dependencies import require
 from ..indexing import reindex_run
 from ..models import AlertEventRow, AlertRuleRow, RunRow
 from ..schemas import RunIn, ScoresIn
 
 router = APIRouter(tags=["ingest"])
-
-
-def _check_auth(authorization: str | None) -> None:
-    if not API_KEY:
-        return
-    if authorization != f"Bearer {API_KEY}":
-        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
 
 
 async def evaluate_alerts(run: dict) -> list[dict]:
@@ -69,9 +63,8 @@ async def ingest_run(
     run: RunIn,
     background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-    authorization: str | None = Header(default=None),
+    _principal=Depends(require("ingest")),
 ):
-    _check_auth(authorization)
     row = await session.get(RunRow, run.run_id)
     spans = [s.model_dump() for s in run.spans]
     payload = dict(  # noqa: C408 - keyword form mirrors the column names
@@ -110,14 +103,13 @@ async def ingest_scores(
     body: ScoresIn,
     background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-    authorization: str | None = Header(default=None),
+    _principal=Depends(require("ingest")),
 ):
     """
     Attach eval scores to a run that already finished. Eval harnesses run
     after the agent, so scores arrive on their own schedule; alerts are
     re-evaluated here so a quality regression still pages you.
     """
-    _check_auth(authorization)
     row = await session.get(RunRow, body.run_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Run '{body.run_id}' not found.")
@@ -150,7 +142,7 @@ async def ingest_otlp(
     payload: dict,
     background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-    authorization: str | None = Header(default=None),
+    _principal=Depends(require("ingest")),
 ):
     """
     OTLP/HTTP trace receiver. Point any OpenTelemetry exporter here — or an
@@ -159,7 +151,6 @@ async def ingest_otlp(
 
     Accepts the same JSON body as a collector's /v1/traces endpoint.
     """
-    _check_auth(authorization)
     from ..otlp import convert_otlp
 
     try:

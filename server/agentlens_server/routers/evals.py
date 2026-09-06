@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
+from ..dependencies import require
 from ..gate import evaluate, to_markdown
 from ..judge import BUILTIN_RUBRICS, judge_run
 from ..models import RunRow
@@ -46,7 +47,9 @@ def _runs_with_tag(rows, tag: str) -> list[dict]:
 
 
 @router.get("/evals/rubrics")
-async def list_rubrics():
+async def list_rubrics(
+    _principal=Depends(require("read")),
+):
     """The judged criteria available, for building a request or a UI."""
     return {
         "rubrics": [
@@ -57,7 +60,11 @@ async def list_rubrics():
 
 
 @router.post("/evals/judge")
-async def judge(req: JudgeRequest, session: AsyncSession = Depends(get_session)):
+async def judge(
+    req: JudgeRequest,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("ingest")),
+):
     """
     Score a run with an LLM judge reading its execution trace. Scores are
     stored in the same shape as inline and Ragas scores, so trends, diffs,
@@ -101,7 +108,11 @@ async def judge(req: JudgeRequest, session: AsyncSession = Depends(get_session))
 
 
 @router.post("/evals/gate")
-async def gate(req: GateRequest, session: AsyncSession = Depends(get_session)):
+async def gate(
+    req: GateRequest,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     """
     The CI check. Compares this branch's scored runs against a baseline and
     returns pass/fail with a per-metric breakdown plus a markdown summary

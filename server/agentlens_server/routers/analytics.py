@@ -11,6 +11,7 @@ from ..analytics import (
     window_start,
 )
 from ..db import get_session
+from ..dependencies import require
 from ..indexing import index_is_stale, rebuild_index
 from ..models import SpanIndexRow
 
@@ -64,6 +65,7 @@ async def span_stats(
     days: Optional[float] = Query(default=7, description="Window in days; omit for all time"),
     agent: Optional[str] = Query(default=None, description="Only this agent's runs"),
     kind: Optional[str] = Query(default=None, description="tool, llm, retrieval, mcp, …"),
+    _principal=Depends(require("read")),
 ):
     """
     Per-step statistics across runs: call counts, error and retry rates,
@@ -93,6 +95,7 @@ async def model_stats(
     session: AsyncSession = Depends(get_session),
     days: Optional[float] = Query(default=30),
     agent: Optional[str] = Query(default=None),
+    _principal=Depends(require("read")),
 ):
     """Cost and token usage grouped by model — where the money goes."""
     rows, capped = await _fetch(session, days=days, agent=agent, kind="llm")
@@ -127,6 +130,7 @@ async def outliers(
     days: Optional[float] = Query(default=7),
     agent: Optional[str] = Query(default=None),
     limit: int = Query(default=20, le=100),
+    _principal=Depends(require("read")),
 ):
     """
     Individual spans that ran far past their own p95, worst first.
@@ -139,7 +143,10 @@ async def outliers(
 
 
 @router.get("/analytics/health")
-async def index_health(session: AsyncSession = Depends(get_session)):
+async def index_health(
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     """Is the derived index populated and roughly in step with the runs?"""
     indexed = (await session.execute(select(func.count(SpanIndexRow.span_id)))).scalar() or 0
     return {
@@ -150,7 +157,10 @@ async def index_health(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/analytics/reindex")
-async def reindex(session: AsyncSession = Depends(get_session)):
+async def reindex(
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("admin")),
+):
     """
     Rebuild the index from the runs table.
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..alerts import FIELDS, OPS, RuleError, build_payload, dispatch, validate_rule
 from ..db import get_session
+from ..dependencies import require
 from ..models import AlertEventRow, AlertRuleRow
 from ..schemas import AlertEventOut, AlertRuleIn, AlertRuleOut
 
@@ -28,13 +29,18 @@ def _rule_out(r: AlertRuleRow) -> AlertRuleOut:
 
 
 @router.get("/alerts/fields")
-async def alert_fields():
+async def alert_fields(
+    _principal=Depends(require("read")),
+):
     """What a rule can be built from — powers the rule builder UI."""
     return {"fields": sorted(FIELDS), "operators": sorted(OPS)}
 
 
 @router.get("/alerts/rules", response_model=list[AlertRuleOut])
-async def list_rules(session: AsyncSession = Depends(get_session)):
+async def list_rules(
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("read")),
+):
     rows = (
         (await session.execute(select(AlertRuleRow).order_by(desc(AlertRuleRow.created_at)))).scalars().all()
     )
@@ -42,7 +48,11 @@ async def list_rules(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/alerts/rules", response_model=AlertRuleOut, status_code=201)
-async def create_rule(rule: AlertRuleIn, session: AsyncSession = Depends(get_session)):
+async def create_rule(
+    rule: AlertRuleIn,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("admin")),
+):
     try:
         validate_rule(rule.field, rule.op, rule.value)
     except RuleError as e:
@@ -64,7 +74,12 @@ async def create_rule(rule: AlertRuleIn, session: AsyncSession = Depends(get_ses
 
 
 @router.patch("/alerts/rules/{rule_id}", response_model=AlertRuleOut)
-async def update_rule(rule_id: str, rule: AlertRuleIn, session: AsyncSession = Depends(get_session)):
+async def update_rule(
+    rule_id: str,
+    rule: AlertRuleIn,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("admin")),
+):
     row = await session.get(AlertRuleRow, rule_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found.")
@@ -80,7 +95,11 @@ async def update_rule(rule_id: str, rule: AlertRuleIn, session: AsyncSession = D
 
 
 @router.delete("/alerts/rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str, session: AsyncSession = Depends(get_session)):
+async def delete_rule(
+    rule_id: str,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("admin")),
+):
     row = await session.get(AlertRuleRow, rule_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found.")
@@ -89,7 +108,11 @@ async def delete_rule(rule_id: str, session: AsyncSession = Depends(get_session)
 
 
 @router.post("/alerts/rules/{rule_id}/test")
-async def test_rule(rule_id: str, session: AsyncSession = Depends(get_session)):
+async def test_rule(
+    rule_id: str,
+    session: AsyncSession = Depends(get_session),
+    _principal=Depends(require("admin")),
+):
     """Send a sample alert so the user can confirm the webhook works."""
     row = await session.get(AlertRuleRow, rule_id)
     if row is None:
@@ -113,6 +136,7 @@ async def list_events(
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=50, le=200),
     run_id: str | None = Query(default=None),
+    _principal=Depends(require("read")),
 ):
     stmt = select(AlertEventRow).order_by(desc(AlertEventRow.fired_at)).limit(limit)
     if run_id:

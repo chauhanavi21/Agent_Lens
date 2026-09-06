@@ -96,3 +96,21 @@ class SpanIndexRow(Base):
 
 # the common analytics query filters by span name over a time window
 Index("ix_span_index_name_started", SpanIndexRow.name, SpanIndexRow.started_at)
+
+
+class ApiKeyRow(Base):
+    """
+    A scoped API key. Only the hash is stored — a trace store is a database
+    of prompts, and a plaintext credential beside it means one disclosure
+    reads both.
+    """
+
+    __tablename__ = "api_keys"
+
+    key_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    key_hash: Mapped[str] = mapped_column(String(128), index=True)
+    scopes: Mapped[list] = mapped_column(default=list)
+    created_at: Mapped[float] = mapped_column(Float)
+    last_used_at: Mapped[float] = mapped_column(Float, nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

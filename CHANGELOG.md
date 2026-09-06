@@ -12,6 +12,12 @@ drift would mean tracking a compatibility matrix nobody wants to maintain.
 
 ### Added
 
+- **Transport integration tests** — a real uvicorn process exercised over
+  real HTTP, covering SSE framing and incremental delivery, CORS preflight
+  for every method the UI uses, multi-subscriber fan-out, subscriber
+  disconnects, API key enforcement, and the SDK's own exporter over a
+  socket. Each was verified to fail when the corresponding behaviour is
+  broken.
 - **Documentation site** (mkdocs-material, published to GitHub Pages) — the
   README had grown to 854 lines and 23 sections, which nobody reads. It's
   now 169 lines pointing at fourteen focused pages, with a link checker that

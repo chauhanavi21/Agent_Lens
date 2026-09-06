@@ -47,6 +47,16 @@ unreachable page ships silently and nobody files a bug about docs.
 - Framework adapters read objects by duck typing and are tested against
   fakes of the documented interface. Don't import a framework's types.
 
+## Transport tests
+
+```bash
+cd server && python -m pytest tests/test_transport.py -q
+```
+
+These launch a real uvicorn process and talk to it over a socket, because
+jsdom fakes `EventSource` and ignores CORS — a misconfiguration there passes
+every UI test and breaks every real browser.
+
 ## The UI
 
 ```bash

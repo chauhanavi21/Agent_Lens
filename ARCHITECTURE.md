@@ -529,6 +529,11 @@ tests. Three things they deliberately cover:
    failing on a missing metric. Replay refusing changed inputs. Most of the
    real bugs surfaced here rather than in happy-path tests.
 
+Three layers cover the UI, deliberately: jsdom component tests for
+rendering and event folding, transport tests against a real server process
+for the wire, and nothing in between — a full browser suite would mostly
+re-test what those two already cover, at several times the runtime.
+
 The UI suite runs entirely in demo mode with `fetch` stubbed to reject, so a
 component reaching for the network fails loudly instead of hanging — and the
 tests double as a check that the offline experience works with no server.
@@ -565,9 +570,12 @@ Being honest about these matters more than the feature list:
   pinning the interface.
 - **The UI loads pages on demand but has no virtualized list**, so a very
   long scrolled history still holds every row in the DOM.
-- **No end-to-end browser test.** The UI suite runs in jsdom against demo
-  data; nothing exercises a real browser against a real server, so a
-  breakage in the actual SSE transport or CORS setup would not be caught.
+- **No end-to-end browser test.** Nothing renders a real DOM against a real
+  server, so a CSS regression or a React error boundary firing in Chrome
+  would go unnoticed. The *transport* between browser and server — SSE
+  framing, incremental delivery, CORS preflight, auth headers — is covered
+  by `server/tests/test_transport.py` against a real uvicorn process, which
+  is where the failures jsdom hides actually live.
 
 ---
 

@@ -101,6 +101,31 @@ jobs:
         if: matrix.python == '3.12'
         run: python scripts/benchmark.py --quick
 
+  transport:
+    name: Transport (real server, real HTTP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -e ./sdk
+          pip install -e "./server[dev]"
+          pip install requests
+
+      - name: Test
+        # These launch a real uvicorn process and talk to it over a socket.
+        # jsdom fakes EventSource and ignores CORS entirely, so the two
+        # things most likely to break a browser are the two things the UI
+        # suite cannot see.
+        working-directory: server
+        run: python -m pytest tests/test_transport.py -q
+
   server-postgres:
     name: Server against real Postgres
     runs-on: ubuntu-latest

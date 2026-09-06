@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import __version__
 from .config import CORS_ORIGINS, RETENTION_POLICY, RETENTION_SWEEP_HOURS
 from .db import SessionLocal, init_db
-from .routers import alerts, analytics, evals, ingest, runs, stream
+from .routers import alerts, analytics, auth, evals, ingest, runs, stream
 
 log = logging.getLogger("agentlens")
 
@@ -122,6 +122,7 @@ app.include_router(alerts.router, prefix="/api")
 app.include_router(stream.router, prefix="/api")
 app.include_router(evals.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 
 
 @app.get("/api/health")
